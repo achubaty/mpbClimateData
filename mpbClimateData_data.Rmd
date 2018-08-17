@@ -1,0 +1,37 @@
+---
+title: "mpbClimate"
+author:
+  - "Alex M. Chubaty"
+  - "Barry J. Cooke"
+  - "Eliot J. B. McIntire"
+date: "February 5, 2018"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+bibliography:
+  - ../../bibliography.bib
+---
+
+### `mpbClimateData`
+
+Over the last 20 years, and using four indices of MPB climatic suitability, there appears to be a long-term trend in enhanced MPB survival throughout BC and Alberta [@Cooke:2017fem], fuelled by accelerating warmth through the last 20 years.
+The effects of temperature on seasonal biology in the US Rocky Mountains have been modelled by Logan et al. (1992). The Logan suitability index (L) is based on summer temperatures [@Logan:2003fr].
+The effects of temperature on winter mortality in the US Rocky Mountains have been modelled by @Regniere:2007ip.
+In the Canadian context, the many effects of temperature on MPB recruitment in British Columbia have been modelled by @Safranyik:1975bk.
+The Safranyik index (S) was subsequently extended to Alberta by @Carroll:2004rm.
+Once the MPB had come into Alberta in large numbers in 2006 the Régnière index (R) was field validated in Alberta [@Cooke:2009ow].
+The North America-wide outputs of these models under standard climate change scenarios were first presented in @Nealis:2008gc, and later received peer-review validation through @Bentz:2010bs and @Safranyik:2010ce.
+A composite SLR index (G, the default) takes the geometric mean of these three models. These are described in further detail in @Nealis:2008gc and @Nealis:2014re.
+
+![](modules/mpbClimateData/fig4_Cooke&Carroll_climate_indices.png)
+
+Our simulation models explore 7 MPB climate scenarios (using each of the four indices: S, L, R, G) used as model drivers.
+BioSim version 10 [@Regniere:1995BioSim] was used to generate the climate suitability maps [see @Bentz:2010bs; @Logan:2003fr; @Safranyik:2010ce).
+The values of each of these indices are bound between 0 and 1, and this value is used to scale the vertical shift of the red-top recruitment curve.
+For each of the four indices, there are 1981-2010 normals plus the projections from two RCP scenarios (either 4.5 or 8.5), covering a span of 120 years, split into 30-year frames.
+All climate maps are projected using a Lambert Conformal Conic projection and cover all of Canada.
+Where possible, all data downloads and preprocessing were scripted for reproducibility from raw, original sources.
+
+#### References
