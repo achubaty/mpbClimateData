@@ -10,7 +10,7 @@ defineModule(sim, list(
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("README.txt", "mpbClimateData.Rmd"),
-  reqdPkgs = list("magrittr", "quickPlot", "raster", "reproducible", "sp"),
+  reqdPkgs = list("amc", "magrittr", "quickPlot", "raster", "reproducible", "sp"),
   parameters = rbind(
     defineParameter("climateScenario", "character", "RCP45", NA_character_, NA_character_, "The climate scenario to use. One of RCP45 or RCP85."),
     defineParameter("suitabilityIndex", "character", "G", NA_character_, NA_character_, "The MPB climatic suitabilty index to use. One of S, L, R, or G."),
@@ -93,15 +93,12 @@ mpbClimateDataSwitchLayer <- function(sim) {
 }
 
 .inputObjects <- function(sim) {
-  # ! ----- EDIT BELOW ----- ! #
-  if (!('studyArea' %in% sim$.userSuppliedObjNames)) {
-    f <- file.path(modulePath(sim), "mpbClimateData", "data", "studyArea.kml")
+  if (!suppliedElsewhere("studyArea")) {
     prj <- paste("+proj=aea +lat_1=47.5 +lat_2=54.5 +lat_0=0 +lon_0=-113",
                  "+x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs +ellps=GRS80 +towgs84=0,0,0")
-    sim$studyArea <- readOGR(f, "studyArea.kml") %>%
-      sp::spTransform(., prj)
+    sim$studyArea <- amc::loadStudyArea(dataPath(sim), "studyArea.kml", prj)
   }
-  # ! ----- STOP EDITING ----- ! #
+
   return(invisible(sim))
 }
 
@@ -113,8 +110,7 @@ mpbClimateDataImportMaps <- function(sim) {
                    "R" = "_RegP[.]tif",
                    "G" = "_GeoP[.]tif",
                    stop("suitability index must be one of S, L, R, or G."))
-  files <- dir(path = file.path(modulePath(sim), "mpbClimateData", "data"),
-               pattern = suffix, full.names = TRUE)
+  files <- dir(path = dataPath(sim), pattern = suffix, full.names = TRUE)
   files <- c(files[1], grep(P(sim)$climateScenario, files, value = TRUE))
 
   if (length(files) == 0) {
