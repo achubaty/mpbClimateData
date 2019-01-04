@@ -18,7 +18,7 @@ defineModule(sim, list(
     defineParameter(".plotInterval", "numeric", NA, NA, NA, "This describes the simulation time interval between plot events"),
     defineParameter(".saveInitialTime", "numeric", NA, NA, NA, "This describes the simulation time at which the first save event should occur"),
     defineParameter(".saveInterval", "numeric", NA, NA, NA, "This describes the simulation time interval between save events"),
-    defineParameter(".useCache", "numeric", FALSE, NA, NA, "Should this entire module be run with caching activated?")
+    defineParameter(".useCache", "logical", FALSE, NA, NA, "Should this entire module be run with caching activated?")
   ),
   inputObjects = bind_rows(
     expectsInput("studyArea", "SpatialPolygons", "The study area to which all maps will be cropped and reprojected.", sourceURL = NA)
@@ -38,7 +38,7 @@ doEvent.mpbClimateData <- function(sim, eventTime, eventType, debug = FALSE) {
       stopifnot(start(sim) > 1981, end(sim) < 2100)
 
       # do stuff for this event
-      sim <- sim$mpbClimateDataImportMaps(sim)
+      sim <- sim$importMaps(sim)
 
       # schedule future event(s)
       sim <- scheduleEvent(sim, start(sim), "mpbClimateData", "switchLayer", .first())
@@ -58,7 +58,7 @@ doEvent.mpbClimateData <- function(sim, eventTime, eventType, debug = FALSE) {
       # ! ----- STOP EDITING ----- ! #
     },
     "switchLayer" = {
-      sim <- mpbClimateDataSwitchLayer(sim)
+      sim <- switchLayer(sim)
 
       sim <- scheduleEvent(sim, time(sim) + 40, "mpbClimateData", "switchLayer")
     },
@@ -68,22 +68,16 @@ doEvent.mpbClimateData <- function(sim, eventTime, eventType, debug = FALSE) {
   return(invisible(sim))
 }
 
-## event functions
-#   - follow the naming convention `modulenameEventtype()`;
-#   - `modulenameInit()` function is required for initiliazation;
-#   - keep event functions short and clean, modularize by calling subroutines from section below.
-
-### template for your event2
-mpbClimateDataSwitchLayer <- function(sim) {
+switchLayer <- function(sim) {
   # ! ----- EDIT BELOW ----- ! #
   sim$climateSuitabilityMap <- if (time(sim) <= 2010) {
-    sim$mpbClimateDataMaps[[1]]
+    sim$climateMaps[[1]]
   } else if (time(sim) <= 2040) {
-    sim$mpbClimateDataMaps[[2]]
+    sim$climateMaps[[2]]
   } else if (time(sim) <= 2070) {
-    sim$mpbClimateDataMaps[[3]]
+    sim$climateMaps[[3]]
   } else if (time(sim) <= 2100) {
-    sim$mpbClimateDataMaps[[4]]
+    sim$climateMaps[[4]]
   } else {
     stop("No climate suitabliity projections available beyond year 2100.")
   }
@@ -103,7 +97,7 @@ mpbClimateDataSwitchLayer <- function(sim) {
 }
 
 ### helper functions
-mpbClimateDataImportMaps <- function(sim) {
+importMaps <- function(sim) {
   suffix <- switch(P(sim)$suitabilityIndex,
                    "S" = "_SafP[.]tif",
                    "L" = "_LoganP[.]tif",
@@ -117,7 +111,7 @@ mpbClimateDataImportMaps <- function(sim) {
     stop("mpbClimateData: missing data files")
   }
 
-  fn1 <- function(files, studyArea) {
+  fn1 <- function(files, studyArea) { # TODO: use prepInputs/postProcess
     layerNames <- c("X1981.2010", "X2011.2040", "X2041.2070", "X2071.2100")
     out <- stack(files) %>%
       amc::cropReproj(., studyArea, layerNames = layerNames, filename = amc::tf(".tif"))
@@ -128,7 +122,7 @@ mpbClimateDataImportMaps <- function(sim) {
     out <- setMinMax(out) %>% stack(.) %>% set_names(., layerNames)
     out
   }
-  sim$mpbClimateDataMaps <- Cache(fn1, files, sim$studyArea)
+  sim$climateMaps <- Cache(fn1, files, sim$studyArea)
 
   return(sim)
 }
