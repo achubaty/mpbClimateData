@@ -188,7 +188,7 @@ importMaps <- function(sim) {
   files <- sim$climateMapFiles
 
   layerNames <- c("X1981.2010", "X2011.2040", "X2041.2070", "X2071.2100")
-browser()
+
   out <- stack(files)
   #amc::cropReproj(out, studyArea, layerNames = layerNames, filename = amc::tf(".tif"))
   out <- Cache(postProcess,
@@ -197,13 +197,14 @@ browser()
                filename2 = NULL,
                rasterToMatch = sim$rasterToMatch,
                overwrite = TRUE,
-               useCache = TRUE)
+               useCache = TRUE) %>%
+    stack()
 
   # ensure all cell values between 0 and 1
   out[out[] < 0.0] <- 0
   out[out[] > 1.0] <- 1
 
-  sim$climateMaps <- setMinMax(out) %>% stack(.) %>% set_names(., layerNames)
+  sim$climateMaps <- setMinMax(out) %>% stack(.) %>% setNames(., layerNames)
 
   return(sim)
 }
