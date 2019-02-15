@@ -188,7 +188,7 @@ importMaps <- function(sim) {
   files <- sim$climateMapFiles
 
   layerNames <- c("X1981.2010", "X2011.2040", "X2041.2070", "X2071.2100")
-
+browser()
   out <- stack(files)
   #amc::cropReproj(out, studyArea, layerNames = layerNames, filename = amc::tf(".tif"))
   out <- Cache(postProcess,
