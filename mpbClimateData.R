@@ -10,7 +10,7 @@ defineModule(sim, list(
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("README.txt", "mpbClimateData.Rmd"),
-  reqdPkgs = list("amc", "magrittr", "quickPlot", "raster", "reproducible", "sp"),
+  reqdPkgs = list("amc", "grid", "magrittr", "quickPlot", "raster", "reproducible", "sp"),
   parameters = rbind(
     defineParameter("climateScenario", "character", "RCP45", NA_character_, NA_character_,
                     "The climate scenario to use. One of RCP45 or RCP85."),
@@ -41,7 +41,12 @@ defineModule(sim, list(
     expectsInput("standAgeMap", "RasterLayer",
                  desc = "stand age map in study area, default is Canada national stand age map",
                  sourceURL = "http://tree.pfc.forestry.ca/kNN-StructureStandVolume.tar"),
-    expectsInput("studyArea", "SpatialPolygons", "The study area to which all maps will be cropped and reprojected.", sourceURL = NA)
+    expectsInput("studyArea", "SpatialPolygons",
+                 desc = "The study area to which all maps will be cropped and reprojected.",
+                 sourceURL = NA),
+    expectsInput("studyAreaLarge", "SpatialPolygons",
+                 desc = "The larger study area to use for spread parameter estimation.", ## TODO: better desc needed
+                 sourceURL = NA)
   ),
   outputObjects = bind_rows(
     createsOutput("climateMaps", "RasterStack", "Stack of climatic suitablity maps."),
@@ -71,7 +76,7 @@ doEvent.mpbClimateData <- function(sim, eventTime, eventType, debug = FALSE) {
       # do stuff for this event
       names(sim$climateSuitabilityMap) <- "layer"
       Plot(sim$climateSuitabilityMap, title = "Climate Suitability Map", new = TRUE)
-      Plot(sim$studyArea, addTo = "sim$climateSuitabilityMap")
+      Plot(sim$studyArea, addTo = "sim$climateSuitabilityMap", gp = gpar(col = "black", fill = 0))
 
       # schedule future event(s)
 
@@ -154,7 +159,7 @@ switchLayer <- function(sim) {
                       destinationPath = dPath,
                       url = extractURL("climateMapFiles"),
                       fun = "raster::raster",
-                      studyArea = sim$studyArea,
+                      studyArea = sim$studyAreaLarge,
                       rasterToMatch = sim$rasterToMatch,
                       method = "bilinear",
                       datatype = "FLT4S",
@@ -193,7 +198,7 @@ importMaps <- function(sim) {
   #amc::cropReproj(out, studyArea, layerNames = layerNames, filename = amc::tf(".tif"))
   out <- Cache(postProcess,
                out,
-               studyArea = sim$studyArea,
+               studyArea = sim$studyAreaLarge,
                filename2 = NULL,
                rasterToMatch = sim$rasterToMatch,
                overwrite = TRUE,
