@@ -174,7 +174,7 @@ switchLayer <- function(sim) {
                      "G" = "_GeoP[.]tif",
                      stop("suitability index must be one of S, L, R, or G."))
 
-    files <- dir(path = dataPath(sim), pattern = suffix, full.names = TRUE)
+    files <- dir(path = dPath, pattern = suffix, full.names = TRUE)
     files <- c(files[1], grep(P(sim)$climateScenario, files, value = TRUE))
 
     if (length(files) == 0) {
