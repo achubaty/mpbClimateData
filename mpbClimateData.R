@@ -14,7 +14,7 @@ defineModule(sim, list(
   parameters = rbind(
     defineParameter("climateScenario", "character", "RCP45", NA_character_, NA_character_,
                     "The climate scenario to use. One of RCP45 or RCP85."),
-    defineParameter("suitabilityIndex", "character", "G", NA_character_, NA_character_,
+    defineParameter("suitabilityIndex", "character", "R", NA_character_, NA_character_,
                     "The MPB climatic suitabilty index to use. One of S, L, R, or G."),
     defineParameter(".maxMemory", "numeric", 1e+9, NA, NA,
                     "Used to set the 'maxmemory' raster option. See '?rasterOptions'."),
