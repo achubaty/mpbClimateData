@@ -34,4 +34,3 @@ For each of the four indices, there are 1981-2010 normals plus the projections f
 All climate maps are projected using a Lambert Conformal Conic projection and cover all of Canada.
 Where possible, all data downloads and preprocessing were scripted for reproducibility from raw, original sources.
 
-#### References
