@@ -33,4 +33,3 @@ The values of each of these indices are bound between 0 and 1, and this value is
 For each of the four indices, there are 1981-2010 normals plus the projections from two RCP scenarios (either 4.5 or 8.5), covering a span of 120 years, split into 30-year frames.
 All climate maps are projected using a Lambert Conformal Conic projection and cover all of Canada.
 Where possible, all data downloads and preprocessing were scripted for reproducibility from raw, original sources.
-
