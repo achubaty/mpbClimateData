@@ -1,8 +1,8 @@
 defineModule(sim, list(
   name = "mpbClimateData",
-  description = "insert module description here",
+  description = "Mountain pine beetle climate sensitivity layers",
   keywords = c("insert key words here"),
-  authors = c(person(c("Alex", "M"), "Chubaty", email = "alexander.chubaty@canada.ca", role = c("aut", "cre"))),
+  authors = c(person(c("Alex", "M"), "Chubaty", email = "achubaty@for-cast.ca", role = c("aut", "cre"))),
   childModules = character(0),
   version = numeric_version("0.0.1"),
   spatialExtent = raster::extent(rep(NA_real_, 4)),
