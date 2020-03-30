@@ -10,7 +10,8 @@ defineModule(sim, list(
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("README.txt", "mpbClimateData.Rmd"),
-  reqdPkgs = list("amc", "grid", "magrittr", "quickPlot", "raster", "reproducible", "sp"),
+  reqdPkgs = list("achubaty/amc@development",
+                  "grid", "magrittr", "quickPlot", "raster", "reproducible", "sp"),
   parameters = rbind(
     defineParameter("climateScenario", "character", "RCP45", NA_character_, NA_character_,
                     "The climate scenario to use. One of RCP45 or RCP85."),
@@ -40,7 +41,10 @@ defineModule(sim, list(
                  sourceURL = NA),
     expectsInput("standAgeMap", "RasterLayer",
                  desc = "stand age map in study area, default is Canada national stand age map",
-                 sourceURL = "http://tree.pfc.forestry.ca/kNN-StructureStandVolume.tar"),
+                 sourceURL = paste0("http://ftp.maps.canada.ca/pub/nrcan_rncan/Forests_Foret/",
+                                    "canada-forests-attributes_attributs-forests-canada/",
+                                    "2001-attributes_attributs-2001/",
+                                    "NFI_MODIS250m_2001_kNN_Structure_Stand_Age_v1.tif")),
     expectsInput("studyArea", "SpatialPolygons",
                  desc = "The study area to which all maps will be cropped and reprojected.",
                  sourceURL = NA),
@@ -127,21 +131,10 @@ switchLayer <- function(sim) {
 
   ## stand age map
   if (!suppliedElsewhere("standAgeMap", sim)) {
-    standAgeMapFilename <- file.path(dPath, "NFI_MODIS250m_kNN_Structure_Stand_Age_v0.tif")
-    sim$standAgeMap <- Cache(prepInputs,
-                             targetFile = basename(standAgeMapFilename),
-                             archive = asPath(c("kNN-StructureStandVolume.tar",
-                                                "NFI_MODIS250m_kNN_Structure_Stand_Age_v0.zip")),
-                             destinationPath = dPath,
-                             url = na.omit(extractURL("standAgeMap")),
-                             fun = "raster::raster",
-                             studyArea = sim$studyArea,
-                             #rasterToMatch = sim$rasterToMatch,
-                             method = "bilinear",
-                             datatype = "INT2U",
-                             filename2 = paste0(tools::file_path_sans_ext(basename(standAgeMapFilename)), "_cropped"),
-                             overwrite = TRUE,
-                             userTags = c("stable", currentModule(sim)))
+    sim$standAgeMap <- amc::loadkNNageMap(path = dPath,
+                                          url = na.omit(extractURL("standAgeMap")),
+                                          studyArea = sim$studyArea,
+                                          userTags = c("stable", currentModule(sim)))
     sim$standAgeMap[] <- asInteger(sim$standAgeMap[])
   }
 
