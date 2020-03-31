@@ -11,7 +11,8 @@ defineModule(sim, list(
   citation = list("citation.bib"),
   documentation = list("README.txt", "mpbClimateData.Rmd"),
   reqdPkgs = list("achubaty/amc@development",
-                  "grid", "magrittr", "quickPlot", "raster", "reproducible", "sp"),
+                  "grid", "magrittr", "PredictiveEcology/pemisc@development",
+                  "quickPlot", "raster", "reproducible", "sp", "spatialEco"),
   parameters = rbind(
     defineParameter("climateScenario", "character", "RCP45", NA_character_, NA_character_,
                     "The climate scenario to use. One of RCP45 or RCP85."),
@@ -122,18 +123,48 @@ switchLayer <- function(sim) {
   if (getOption("LandR.verbose", TRUE) > 0)
     message(currentModule(sim), ": using dataPath '", dPath, "'.")
 
+  #mod$prj <- paste("+proj=aea +lat_1=47.5 +lat_2=54.5 +lat_0=0 +lon_0=-113",
+  #                 "+x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs +ellps=GRS80 +towgs84=0,0,0")
+  mod$prj <- paste("+proj=lcc +lat_1=49 +lat_2=77 +lat_0=0 +lon_0=-95",
+                   "+x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs")
+
   ## load study area
   if (!suppliedElsewhere("studyArea")) {
-    prj <- paste("+proj=aea +lat_1=47.5 +lat_2=54.5 +lat_0=0 +lon_0=-113",
-                 "+x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs +ellps=GRS80 +towgs84=0,0,0")
-    sim$studyArea <- amc::loadStudyArea(dataPath(sim), "studyArea.kml", prj)
+    sim$studyArea <- amc::loadStudyArea(dataPath(sim), "studyArea.kml", mod$prj)
+  }
+
+  canProvs <- Cache(prepInputs, dlFun = "raster::getData", "GADM",
+                    country = "CAN", level = 1, path = dPath,
+                    destinationPath = dPath,
+                    targetFile = "gadm36_CAN_1_sp.rds", ## TODO: this will change as GADM data update
+                    fun = "base::readRDS")
+
+  ## studyAreaLarge
+  if (!suppliedElsewhere("studyAreaLarge")) {
+    west <- canProvs[canProvs$NAME_1 %in% c("Alberta", "Saskatchewan"), ]
+    west <- Cache(postProcess, west, targetCRS = mod$prj, filename2 = NULL)
+
+    sim$studyAreaLarge <- Cache(prepInputs,
+                                targetFile = "NABoreal.shp",
+                                alsoExtract = "similar",
+                                archive = asPath("boreal.zip"),
+                                destinationPath = dPath,
+                                url = "http://cfs.nrcan.gc.ca/common/boreal.zip",
+                                fun = "sf::read_sf",
+                                useSAcrs = TRUE,
+                                studyArea = west,
+                                filename2 = NULL,
+                                userTags = c("stable", currentModule(sim), "NorthAmericanBoreal")) %>%
+      as("Spatial") %>%
+      aggregate() %>%
+      spatialEco::remove.holes()
   }
 
   ## stand age map
   if (!suppliedElsewhere("standAgeMap", sim)) {
     sim$standAgeMap <- amc::loadkNNageMap(path = dPath,
                                           url = na.omit(extractURL("standAgeMap")),
-                                          studyArea = sim$studyArea,
+                                          studyArea = sim$studyAreaLarge,
                                           userTags = c("stable", currentModule(sim)))
     sim$standAgeMap[] <- asInteger(sim$standAgeMap[])
   }
@@ -187,22 +218,17 @@ importMaps <- function(sim) {
 
   layerNames <- c("X1981.2010", "X2011.2040", "X2041.2070", "X2071.2100")
 
-  out <- stack(files)
-  #amc::cropReproj(out, studyArea, layerNames = layerNames, filename = amc::tf(".tif"))
-  out <- Cache(postProcess,
-               out,
-               studyArea = sim$studyAreaLarge,
-               filename2 = NULL,
-               rasterToMatch = sim$rasterToMatch,
-               overwrite = TRUE,
-               useCache = TRUE) %>%
-    stack()
-
-  # ensure all cell values between 0 and 1
-  out[out[] < 0.0] <- 0
-  out[out[] > 1.0] <- 1
-
-  sim$climateMaps <- setMinMax(out) %>% stack(.) %>% setNames(., layerNames)
+  rawClimateMaps <- stack(files)
+  sim$climateMaps <- Cache(postProcess,
+                           rawClimateMaps,
+                           studyArea = sim$studyAreaLarge,
+                           filename2 = NULL,
+                           rasterToMatch = sim$rasterToMatch,
+                           overwrite = TRUE,
+                           useCache = TRUE) %>%
+    stack() %>%
+    setNames(layerNames) %>%
+    pemisc::normalizeStack()
 
   return(sim)
 }
