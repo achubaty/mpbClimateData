@@ -70,18 +70,20 @@ doEvent.mpbClimateData <- function(sim, eventTime, eventType, debug = FALSE) {
 
       # do stuff for this event
       sim <- importMaps(sim)
+      sim <- switchLayer(sim)
 
       # schedule future event(s)
-      sim <- scheduleEvent(sim, start(sim), "mpbClimateData", "switchLayer", .first())
-      sim <- scheduleEvent(sim, P(sim)$.plotInitialTime, "mpbClimateData", "plot", .last())
-      sim <- scheduleEvent(sim, P(sim)$.saveInitialTime, "mpbClimateData", "save", .last() + 1)
+      sim <- scheduleEvent(sim, start(sim) + 1, "mpbClimateData", "switchLayer", .first()) ## TODO: make this more efficient; not run every year
+      sim <- scheduleEvent(sim, P(sim)$.plotInitialTime, "mpbClimateData", "plot", .last() - 1)
+      sim <- scheduleEvent(sim, P(sim)$.saveInitialTime, "mpbClimateData", "save", .last())
     },
     "plot" = {
       # ! ----- EDIT BELOW ----- ! #
       # do stuff for this event
       names(sim$climateSuitabilityMap) <- "layer"
       Plot(sim$climateSuitabilityMap, title = "Climate Suitability Map", new = TRUE)
-      Plot(sim$studyArea, addTo = "sim$climateSuitabilityMap", gp = gpar(col = "black", fill = 0))
+      Plot(sim$studyArea, addTo = "sim$climateSuitabilityMap", gp = gpar(col = "black", fill = 0),
+           title = "")
 
       # schedule future event(s)
 
@@ -91,7 +93,7 @@ doEvent.mpbClimateData <- function(sim, eventTime, eventType, debug = FALSE) {
     "switchLayer" = {
       sim <- switchLayer(sim)
 
-      sim <- scheduleEvent(sim, time(sim) + 30, "mpbClimateData", "switchLayer") ## TODO: make this work with start times != 2011
+      sim <- scheduleEvent(sim, time(sim) + 30, "mpbClimateData", "switchLayer", .first())
     },
     warning(paste("Undefined event type: '", current(sim)[1, "eventType", with = FALSE],
                   "' in module '", current(sim)[1, "moduleName", with = FALSE], "'", sep = ""))
