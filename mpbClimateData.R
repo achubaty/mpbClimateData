@@ -2,7 +2,9 @@ defineModule(sim, list(
   name = "mpbClimateData",
   description = "Mountain pine beetle climate sensitivity layers",
   keywords = c("insert key words here"),
-  authors = c(person(c("Alex", "M"), "Chubaty", email = "achubaty@for-cast.ca", role = c("aut", "cre"))),
+  authors = c(
+    person(c("Alex", "M"), "Chubaty", email = "achubaty@for-cast.ca", role = c("aut", "cre"))
+  ),
   childModules = character(0),
   version = numeric_version("0.0.1"),
   spatialExtent = raster::extent(rep(NA_real_, 4)),
@@ -11,7 +13,7 @@ defineModule(sim, list(
   citation = list("citation.bib"),
   documentation = list("README.txt", "mpbClimateData.Rmd"),
   reqdPkgs = list("achubaty/amc@development",
-                  "grid", "magrittr", "PredictiveEcology/pemisc@development",
+                  "grid", "magrittr", "maptools", "PredictiveEcology/pemisc@development",
                   "quickPlot", "raster", "reproducible", "sp", "spatialEco"),
   parameters = rbind(
     defineParameter("climateScenario", "character", "RCP45", NA_character_, NA_character_,
