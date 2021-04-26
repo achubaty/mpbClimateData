@@ -33,7 +33,7 @@ defineModule(sim, list(
     defineParameter(".useCache", "logical", FALSE, NA, NA,
                     "Should this entire module be run with caching activated?")
   ),
-  inputObjects = bind_rows(
+  inputObjects = bindrows(
     expectsInput("climateMapFiles", "character",
                  desc = "Vector of filenames correspoding to climate suitablity map layers",
                  sourceURL = "https://drive.google.com/file/d/1u4TpfkVonGk9FEw5ygShY1xiuk3FqKo3/view?usp=sharing"),
@@ -53,7 +53,7 @@ defineModule(sim, list(
                  desc = "The larger study area to use for spread parameter estimation.", ## TODO: better desc needed
                  sourceURL = NA)
   ),
-  outputObjects = bind_rows(
+  outputObjects = bindrows(
     createsOutput("climateMaps", "RasterStack", "Stack of climatic suitablity maps."),
     createsOutput("climateSuitabilityMap", "RasterLayer", "A climatic suitablity map for the current year.")
   )
