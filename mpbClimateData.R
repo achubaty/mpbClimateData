@@ -204,7 +204,7 @@ importMaps <- function(sim) {
 
   layerNames <- c("X1981.2010", "X2011.2040", "X2041.2070", "X2071.2100")
 
-  rawClimateMaps <- stack(files)
+  rawClimateMaps <- raster::stack(files)
   sim$climateMaps <- Cache(postProcess,
                            rawClimateMaps,
                            studyArea = sim$studyAreaLarge,
@@ -212,7 +212,7 @@ importMaps <- function(sim) {
                            rasterToMatch = sim$rasterToMatch,
                            overwrite = TRUE,
                            useCache = TRUE) %>%
-    stack() %>%
+    raster::stack() %>%
     setNames(layerNames) %>%
     pemisc::normalizeStack()
 
