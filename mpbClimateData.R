@@ -33,7 +33,7 @@ defineModule(sim, list(
                     "This describes the simulation time at which the first save event should occur"),
     defineParameter(".saveInterval", "numeric", NA, NA, NA,
                     "This describes the simulation time interval between save events"),
-    defineParameter(".tempdir", "character", tempdir(), NA, NA,
+    defineParameter(".tempdir", "character", NULL, NA, NA,
                     "Temporary (scratch) directory to use for transient files (e.g., GIS intermediates)."),
     defineParameter(".useCache", "logical", FALSE, NA, NA,
                     "Should this entire module be run with caching activated?")
