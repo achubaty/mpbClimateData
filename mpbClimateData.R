@@ -14,7 +14,7 @@ defineModule(sim, list(
   documentation = list("README.txt", "mpbClimateData.Rmd"),
   reqdPkgs = list("achubaty/amc@development",
                   "grid",
-                  "PredictiveEcology/LandR@development",
+                  "PredictiveEcology/LandR@LCC2010 (>= 1.0.3)",
                   "magrittr", "maptools",
                   "PredictiveEcology/pemisc@development",
                   "quickPlot", "raster", "reproducible", "sp", "spatialEco"),
@@ -25,6 +25,8 @@ defineModule(sim, list(
                     "The MPB climatic suitabilty index to use. One of S, L, R, or G."),
     defineParameter(".maxMemory", "numeric", 1e+9, NA, NA,
                     "Used to set the 'maxmemory' raster option. See '?rasterOptions'."),
+    defineParameter(".plots", "character", "", NA_character_, NA_character_,
+                    "This describes the simulation time at which the first plot event should occur"),
     defineParameter(".plotInitialTime", "numeric", start(sim), 1981, 2100,
                     "This describes the simulation time at which the first plot event should occur"),
     defineParameter(".plotInterval", "numeric", NA, NA, NA,
@@ -42,6 +44,9 @@ defineModule(sim, list(
     expectsInput("climateMapFiles", "character",
                  desc = "Vector of filenames correspoding to climate suitablity map layers",
                  sourceURL = "https://drive.google.com/file/d/1u4TpfkVonGk9FEw5ygShY1xiuk3FqKo3/view?usp=sharing"),
+    expectsInput("windMaps", "RasterStack",
+                 desc = "RasterStack of wind maps for every location in the study area",
+                 sourceURL = ""),
     expectsInput("rasterToMatch", "RasterLayer",
                  desc = "if not supplied, will default to standAgeMap", # TODO: description needed
                  sourceURL = NA),
@@ -139,27 +144,33 @@ switchLayer <- function(sim) {
                                   cPath, dPath)
   }
 
-  ## raster to match
-  if (!suppliedElsewhere("rasterToMatch", sim)) {
-    sim$rasterToMatch <- Cache(
-      LandR::prepInputsLCC,
-      year = 2005,
-      destinationPath = dPath,
-      studyArea = sf::as_Spatial(sim$studyArea)
-    )
-  }
-
   ## stand age map
   if (!suppliedElsewhere("standAgeMap", sim)) {
-    sim$standAgeMap <- LandR::prepInputsStandAgeMap(
-      startTime = 2010,
-      ageUrl = na.omit(extractURL("standAgeMap")),
-      destinationPath = dPath,
-      studyArea = sim$studyArea,
-      rasterToMatch = sim$rasterToMatch,
-      userTags = c("stable", currentModule(sim)) ## TODO: does this need rasterToMatch? it IS rtm!
-    )
+    sim$standAgeMap <- Cache(prepInputs,
+                             url = na.omit(extractURL("standAgeMap")),
+                             studyArea = sim$studyArea,
+                             destinationPath = dPath,
+                             userTags = c("stable", currentModule(sim))) ## TODO: does this need rasterToMatch? it IS rtm!)
+    # sim$standAgeMap <- LandR::prepInputsStandAgeMap(
+    #   startTime = 2010,
+    #   ageUrl = na.omit(extractURL("standAgeMap")),
+    #   destinationPath = dPath,
+    #   studyArea = sim$studyArea,
+    #   rasterToMatch = sim$rasterToMatch,
+    #   userTags = c("stable", currentModule(sim)) ## TODO: does this need rasterToMatch? it IS rtm!
+    # )
     sim$standAgeMap[] <- asInteger(sim$standAgeMap[])
+  }
+
+  ## raster to match
+  if (!suppliedElsewhere("rasterToMatch", sim)) {
+    sim$rasterToMatch <- sim$standAgeMap
+    # sim$rasterToMatch <- Cache(
+    #   LandR::prepInputsLCC,
+    #   year = 2010,
+    #   destinationPath = dPath,
+    #   studyArea = sim$studyArea
+    # )
   }
 
   ## download the climate map files
@@ -196,6 +207,62 @@ switchLayer <- function(sim) {
     sim$climateMapFiles <- files
   }
 
+  if (!suppliedElsewhere("windMaps")) {
+
+    # Make coarser
+    aggRTM <- raster::raster(sim$rasterToMatch)
+    aggRTM <- raster::aggregate(aggRTM, fact = 40)
+    aggRTM <- aggregateRasByDT(sim$rasterToMatch, aggRTM, fn = mean)
+
+    # Make Vector dataset
+    cells <- xyFromCell(aggRTM, cell = which(!is.na(aggRTM[])))
+    sps <- sf::st_as_sf(SpatialPoints(cells, proj4string = crs(aggRTM)))
+    sps <- sf::st_transform(sps, crs = 4326)#"+init=epsg:3857")#  "4326")
+    locations <- data.table(Name = paste0("ID", 1:NROW(sps)), st_coordinates(sps))
+
+    # Do call to BioSIM
+    library(BioSIM)
+    stWind <- system.time(
+      wind <- Cache(getModelOutput, 2010, 2021, locations$Name,
+                             locations$Y, locations$X, rep(1000, NROW(sps)),
+                             modelName = getModelList()[16],
+                             rcp = "RCP85", climModel = "GCM4"))
+
+    # Make RasterStack
+    setDT(wind)
+    windStk <- stack(aggRTM)
+    for (yr in unique(wind$Year)) {
+      yrChar <- paste0("X", yr)
+      windYr <- wind[Year == yr]
+
+      # Convert BioSIM data to Vector dataset
+      spWind <- sf::st_as_sf(SpatialPoints(wind[Year==yr, c("Longitude", "Latitude")], proj4string = CRS("+init=epsg:4326")))
+      spWind <- sf::st_transform(spWind, crs = st_crs(aggRTM))
+      cells <- cellFromXY(aggRTM, sf::st_coordinates(spWind))
+      cols <- grep("^W[[:digit:]]", colnames(windYr), value = TRUE)
+
+      # Convert to single main direction
+      dirs <- (apply(windYr[, ..cols], 1, which.max) - 1) * 10
+
+      # Convert to Raster
+      windYrRas <- raster(aggRTM)
+      windYrRas[cells] <- dirs
+      windStk[[yrChar]] <- windYrRas
+    }
+
+    # Visualize
+    Plots(windStk)
+
+    windMaps <- disaggregate(windStk, fact = 40)
+    sim$windMaps <- raster::stack(crop(windMaps, sim$rasterToMatch))
+    sim$windMaps <- raster::crop(sim$windMaps, sim$rasterToMatch)
+    if (!compareRaster(sim$windMaps, sim$rasterToMatch, stopiffalse = FALSE)) {
+      warning("wind raster is not same resolution as sim$rasterToMatch; please debug")
+      browser()
+    }
+
+  }
+
   return(invisible(sim))
 }
 
@@ -219,4 +286,20 @@ importMaps <- function(sim) {
     pemisc::normalizeStack()
 
   return(sim)
+}
+
+aggregateRasByDT <- function(ras, newRas, fn = sum) {
+  whNonNA <- which(!is.na(ras[]))
+  rc2 <- rowColFromCell(ras, whNonNA)
+  if (!all(((res(newRas)/res(ras)) %% 1) == 0))
+    stop("The resolutions of the original raster and new raster are not integer multiples")
+  disaggregateFactor <- unique(res(newRas)/res(ras))
+  dt <- data.table(vals = ras[][whNonNA], ceiling(rc2 / disaggregateFactor))
+  dt2 <- dt[, list(vals = fn(vals)), by = c("row", "col")]
+  pixes <- cellFromRowCol(newRas, row = dt2$row, col = dt2$col)
+  newRasOut <- raster(newRas)
+  newRasOut[pixes] <- dt2$vals
+  names(newRasOut) <- names(ras)
+  newRasOut
+
 }
