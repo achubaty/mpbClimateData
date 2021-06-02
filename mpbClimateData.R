@@ -16,6 +16,7 @@ defineModule(sim, list(
                   "grid",
                   "PredictiveEcology/LandR@LCC2010 (>= 1.0.3)",
                   "magrittr", "maptools",
+                  "PredictiveEcology/mpbutils (>= 0.1.2)",
                   "PredictiveEcology/pemisc@development",
                   "quickPlot", "raster", "reproducible", "sp", "spatialEco"),
   parameters = rbind(
