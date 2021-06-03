@@ -235,30 +235,73 @@ switchLayer <- function(sim) {
                              modelName = windModel,
                              rcp = "RCP85", climModel = "GCM4"))
 
+    windModel <- Cache(getModelList)[17]
+    stWind <- system.time( # 43 minutes with 3492 locations
+      wind <- Cache(getModelOutput, 2010, 2021, locations$Name,
+                    locations$Y, locations$X, rep(1000, NROW(locations)),
+                    modelName = windModel,
+                    rcp = "RCP85", climModel = "GCM4"))
+
     # Make RasterStack
     setDT(wind)
     windStk <- stack(raster(aggRTM))
     for (yr in unique(wind$Year)) {
       yrChar <- paste0("X", yr)
       windYr <- wind[Year == yr]
+      if (any(colnames(windYr) == "Month")) {
+        windYr <- windYr[Month %in% 6:8]
+      }
 
-      # Convert BioSIM data to Vector dataset
-      spWind <- sf::st_as_sf(SpatialPoints(wind[Year==yr, c("Longitude", "Latitude")], proj4string = CRS("+init=epsg:4326")))
+      # ww <- data.table::melt(windYr, measure.vars = patterns("^W[[:digit:]]"), id.vars = c("KeyID", "Month"))
+      # ww1 <- ww[, list(mn = mean(value), low = pmax(0, mean(value) - sd(value) * 1.96), high = mean(value) + sd(value) * 1.96), by = c("Month", "variable")]
+      # ww1[, dir := as.numeric(gsub("W", "", variable))]
+      # ggplot(ww1, aes(x = dir, y = mn, group = Month, color = Month)) +
+      #   geom_line() #+
+      #   #geom_ribbon(aes(ymin = low, ymax = high), alpha = 0.2)
+      windCols <- grep("^W[[:digit:]]", colnames(windYr), value = TRUE)
+      cols <- c("KeyID", "Month", windCols)
+
+      # Convert to single main direction -- sum of all vectors (i.e., magnitude and direction)
+      # Means converting to x and y dimensions, then summing each of those, then reconverting back
+      #  to angles
+      # windYr1 <- windYr[, ..cols]
+      angs0To360 <- (seq_along(colnames(windYr[, ..windCols]))-1) * 10
+
+      # ang <- sumAngles(angles = angs0To360, magnitude = windYr1[, ..windCols])
+      #
+      # set(windYr1, NULL, "angleMean", ang)
+      # if (any(colnames(windYr) == "Month")) {
+      #   windYr1 <- windYr1[, list(angleMean = mean(angleMean)), by = c("KeyID")]
+      # }
+      #
+      #
+      # dirs <- windYr1$angleMean # (apply(windYr[, ..windCols], 1, which.max) - 1) * 10
+      #
+      # # Convert BioSIM data to Vector dataset
+      # spWind <- sf::st_as_sf(SpatialPoints(wind[Year==yr, c("Longitude", "Latitude")], proj4string = CRS("+init=epsg:4326")))
+      # spWind <- sf::st_transform(spWind, crs = st_crs(aggRTM))
+      # cells <- cellFromXY(aggRTM, sf::st_coordinates(spWind))
+      #
+      # # Convert to Raster
+      # windYrRas <- raster(aggRTM)
+      # windYrRas[cells] <- dirs
+      #########################
+      # windYr <- wind[Month %in% 6:7 & Year == 2010]
+      ang <- sumAngles(angs0To360, windYr[, ..windCols])
+      set(windYr, NULL, "angleMean", ang)
+      windYr <- windYr[, list(Longitude, Latitude, angleMean = mean(angleMean)), by = c("KeyID")]
+      dirs <- windYr$angleMean # (apply(windYr[, ..windCols], 1, which.max) - 1) * 10
+      spWind <- sf::st_as_sf(SpatialPoints(windYr[, c("Longitude", "Latitude")], proj4string = CRS("+init=epsg:4326")))
       spWind <- sf::st_transform(spWind, crs = st_crs(aggRTM))
       cells <- cellFromXY(aggRTM, sf::st_coordinates(spWind))
-      cols <- grep("^W[[:digit:]]", colnames(windYr), value = TRUE)
-
-      # Convert to single main direction
-      dirs <- (apply(windYr[, ..cols], 1, which.max) - 1) * 10
-
-      # Convert to Raster
       windYrRas <- raster(aggRTM)
       windYrRas[cells] <- dirs
+      # clearPlot(); Plot(windYrRas, new = TRUE)
       windStk[[yrChar]] <- windYrRas
     }
 
     # Visualize
-    Plots(windStk)
+    # Plots(windStk)
 
     windMaps <- disaggregate(windStk, fact = 40)
     sim$windMaps <- raster::stack(crop(windMaps, sim$rasterToMatch))
@@ -308,4 +351,22 @@ aggregateRasByDT <- function(ras, newRas, fn = sum) {
   names(newRasOut) <- names(ras)
   newRasOut
 
+}
+
+sumAngles <- function(angles, magnitude) {
+  dimsM <- dim(magnitude)
+  dimsA <- dim(angles)
+  if (!identical(dimsM, dimsA)) {
+    if (!length(angles) %in% dimsM) {
+      stop("angles must have same number of rows as magnitude matrix")
+    }
+    a <- rep(angles, NROW(magnitude))
+    angles <- matrix(a, nrow = NROW(magnitude), ncol = length(angles), byrow = TRUE)
+  }
+
+  x <- round(magnitude * sin(rad(angles)), 5)
+  y <- round(magnitude * cos(rad(angles)), 5)
+  x <- apply(x, 1, mean)
+  y <- apply(y, 1, mean)
+  deg(atan2(x, y)) %% 360
 }
