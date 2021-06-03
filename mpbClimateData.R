@@ -12,13 +12,13 @@ defineModule(sim, list(
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("README.txt", "mpbClimateData.Rmd"),
-  reqdPkgs = list("achubaty/amc@development",
+  reqdPkgs = list("achubaty/amc@development", "BioSIM",
                   "grid",
                   "PredictiveEcology/LandR@LCC2010 (>= 1.0.3)",
                   "magrittr", "maptools",
                   "PredictiveEcology/mpbutils (>= 0.1.2)",
                   "PredictiveEcology/pemisc@development",
-                  "quickPlot", "raster", "reproducible", "sp", "spatialEco"),
+                  "quickPlot", "raster", "PredictiveEcology/reproducible@development (>= 1.2.7.9002)", "sp", "spatialEco"),
   parameters = rbind(
     defineParameter("climateScenario", "character", "RCP45", NA_character_, NA_character_,
                     "The climate scenario to use. One of RCP45 or RCP85."),
@@ -75,6 +75,11 @@ doEvent.mpbClimateData <- function(sim, eventTime, eventType, debug = FALSE) {
     "init" = {
       ### check sim init params etc.
       stopifnot(start(sim) > 1981, end(sim) < 2100)
+      if (!require("BioSIM")) {
+        # https://sourceforge.net/p/mrnfforesttools/biosimclient/wiki/BioSIM-R/#requirements
+        install.packages("https://sourceforge.net/projects/repiceasource/files/latest", repos = NULL,  type="source")
+        install.packages("https://sourceforge.net/projects/biosimclient.mrnfforesttools.p/files/latest", repos = NULL,  type="source")
+      }
 
       # do stuff for this event
       sim <- importMaps(sim)
@@ -222,16 +227,17 @@ switchLayer <- function(sim) {
     locations <- data.table(Name = paste0("ID", 1:NROW(sps)), st_coordinates(sps))
 
     # Do call to BioSIM
-    library(BioSIM)
+    # Until this gets fixed in J4R; this is the fix
+    windModel <- Cache(getModelList)[16]
     stWind <- system.time(
       wind <- Cache(getModelOutput, 2010, 2021, locations$Name,
                              locations$Y, locations$X, rep(1000, NROW(sps)),
-                             modelName = getModelList()[16],
+                             modelName = windModel,
                              rcp = "RCP85", climModel = "GCM4"))
 
     # Make RasterStack
     setDT(wind)
-    windStk <- stack(aggRTM)
+    windStk <- stack(raster(aggRTM))
     for (yr in unique(wind$Year)) {
       yrChar <- paste0("X", yr)
       windYr <- wind[Year == yr]
@@ -256,7 +262,6 @@ switchLayer <- function(sim) {
 
     windMaps <- disaggregate(windStk, fact = 40)
     sim$windMaps <- raster::stack(crop(windMaps, sim$rasterToMatch))
-    sim$windMaps <- raster::crop(sim$windMaps, sim$rasterToMatch)
     if (!compareRaster(sim$windMaps, sim$rasterToMatch, stopiffalse = FALSE)) {
       warning("wind raster is not same resolution as sim$rasterToMatch; please debug")
       browser()
