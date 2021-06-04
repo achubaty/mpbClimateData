@@ -218,35 +218,45 @@ switchLayer <- function(sim) {
     # Make coarser
     aggRTM <- raster::raster(sim$rasterToMatch)
     aggRTM <- raster::aggregate(aggRTM, fact = 40)
-    aggRTM <- aggregateRasByDT(sim$rasterToMatch, aggRTM, fn = mean)
 
-    # Make Vector dataset
-    cells <- xyFromCell(aggRTM, cell = which(!is.na(aggRTM[])))
-    sps <- sf::st_as_sf(SpatialPoints(cells, proj4string = crs(aggRTM)))
-    sps <- sf::st_transform(sps, crs = 4326)#"+init=epsg:3857")#  "4326")
-    locations <- data.table(Name = paste0("ID", 1:NROW(sps)), st_coordinates(sps))
-
-    # Do call to BioSIM
-    # Until this gets fixed in J4R; this is the fix
-    browser()
     windModel <- try(Cache(getModelList)[17])
-    # stWind <- system.time(
-    #   wind <- Cache(getModelOutput, 2010, 2021, locations$Name,
-    #                          locations$Y, locations$X, rep(1000, NROW(sps)),
-    #                          modelName = windModel,
-    #                          rcp = "RCP85", climModel = "GCM4"))
-    #
-    # windModel <- Cache(getModelList)[17]
     if (is(windModel, "try-error")) {
-      library(googledrive);
-      driveDL <- Cache(googledrive::drive_download, as_id("16xEX2HVDTT2voLC5doRDEZ-WzNq_69EP"), overwrite = TRUE)
-      wind <- qs::qread(driveDL$local_path)
+      #library(googledrive);
+      #driveDL <- Cache(googledrive::drive_download, as_id("16xEX2HVDTT2voLC5doRDEZ-WzNq_69EP"), overwrite = TRUE)
+      #wind <- qs::qread(driveDL$local_path)
+      windCacheId <- "4c8b1213c39a6088"
     } else {
+      windCacheId <- NULL
+    }
+      aggRTM <- aggregateRasByDT(sim$rasterToMatch, aggRTM, fn = mean)
+
+      # Make Vector dataset
+      cellsWData <- which(!is.na(aggRTM[]))
+      cells <- xyFromCell(aggRTM, cell = cellsWData)
+      sps <- sf::st_as_sf(SpatialPoints(cells, proj4string = crs(aggRTM)))
+      sps <- sf::st_transform(sps, crs = 4326)#"+init=epsg:3857")#  "4326")
+      locations <- data.table(Name = paste0("ID", 1:NROW(sps)), st_coordinates(sps))
+
+      # Do call to BioSIM
+      # Until this gets fixed in J4R; this is the fix
+      # stWind <- system.time(
+      #   wind <- Cache(getModelOutput, 2010, 2021, locations$Name,
+      #                          locations$Y, locations$X, rep(1000, NROW(sps)),
+      #                          modelName = windModel,
+      #                          rcp = "RCP85", climModel = "GCM4"))
+      #
+      # windModel <- Cache(getModelList)[17]
+      DEM <- Cache(LandR::prepInputsCanDEM, rasterToMatch = sim$rasterToMatch, studyArea = sim$studyArea,
+                   destinationPath = dPath)
+      browser()
       stWind <- system.time( # 43 minutes with 3492 locations
         wind <- Cache(getModelOutput, 2010, 2021, locations$Name,
-                      locations$Y, locations$X, rep(1000, NROW(locations)),
+                      locations$Y, locations$X, DEM[][cellsWData],
                       modelName = windModel,
-                      rcp = "RCP85", climModel = "GCM4"))
+                      rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
+                      cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
+                      cacheId = windCacheId))
+      message("You may need to update the windCacheId")
     }
     # Make RasterStack
     setDT(wind)
