@@ -228,20 +228,26 @@ switchLayer <- function(sim) {
 
     # Do call to BioSIM
     # Until this gets fixed in J4R; this is the fix
-    windModel <- Cache(getModelList)[16]
-    stWind <- system.time(
-      wind <- Cache(getModelOutput, 2010, 2021, locations$Name,
-                             locations$Y, locations$X, rep(1000, NROW(sps)),
-                             modelName = windModel,
-                             rcp = "RCP85", climModel = "GCM4"))
-
-    windModel <- Cache(getModelList)[17]
-    stWind <- system.time( # 43 minutes with 3492 locations
-      wind <- Cache(getModelOutput, 2010, 2021, locations$Name,
-                    locations$Y, locations$X, rep(1000, NROW(locations)),
-                    modelName = windModel,
-                    rcp = "RCP85", climModel = "GCM4"))
-
+    browser()
+    windModel <- try(Cache(getModelList)[17])
+    # stWind <- system.time(
+    #   wind <- Cache(getModelOutput, 2010, 2021, locations$Name,
+    #                          locations$Y, locations$X, rep(1000, NROW(sps)),
+    #                          modelName = windModel,
+    #                          rcp = "RCP85", climModel = "GCM4"))
+    #
+    # windModel <- Cache(getModelList)[17]
+    if (is(windModel, "try-error")) {
+      library(googledrive);
+      driveDL <- Cache(googledrive::drive_download, as_id("16xEX2HVDTT2voLC5doRDEZ-WzNq_69EP"), overwrite = TRUE)
+      wind <- qs::qread(driveDL$local_path)
+    } else {
+      stWind <- system.time( # 43 minutes with 3492 locations
+        wind <- Cache(getModelOutput, 2010, 2021, locations$Name,
+                      locations$Y, locations$X, rep(1000, NROW(locations)),
+                      modelName = windModel,
+                      rcp = "RCP85", climModel = "GCM4"))
+    }
     # Make RasterStack
     setDT(wind)
     windStk <- stack(raster(aggRTM))
