@@ -277,7 +277,8 @@ switchLayer <- function(sim) {
     windStk <- stack(raster(aggRTM))
     mnths <- months(as.POSIXct("2021-01-15") + dmonth(1) * 0:11)
     whMonths <- 7
-    message("Using only ", crayon::red(paste(mnths[whMonths], collapse = ", ")), " for fitting MPB data")
+    message("Using only ", crayon::red(paste(mnths[whMonths], collapse = ", ")),
+            " wind directions")
 
     for (yr in unique(wind$Year)) {
       yrChar <- paste0("X", yr)
