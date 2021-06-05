@@ -18,6 +18,7 @@ defineModule(sim, list(
                   "magrittr", "maptools",
                   "PredictiveEcology/mpbutils (>= 0.1.2)",
                   "PredictiveEcology/pemisc@development",
+                  "PredictiveEcology/SpaDES.core@development (>= 1.0.7.9000)",
                   "quickPlot", "raster", "PredictiveEcology/reproducible@development (>= 1.2.7.9002)", "sp", "spatialEco"),
   parameters = rbind(
     defineParameter("climateScenario", "character", "RCP45", NA_character_, NA_character_,
@@ -26,7 +27,7 @@ defineModule(sim, list(
                     "The MPB climatic suitabilty index to use. One of S, L, R, or G."),
     defineParameter(".maxMemory", "numeric", 1e+9, NA, NA,
                     "Used to set the 'maxmemory' raster option. See '?rasterOptions'."),
-    defineParameter(".plots", "character", "", NA_character_, NA_character_,
+    defineParameter(".plots", "character", "screen", NA_character_, NA_character_,
                     "This describes the simulation time at which the first plot event should occur"),
     defineParameter(".plotInitialTime", "numeric", start(sim), 1981, 2100,
                     "This describes the simulation time at which the first plot event should occur"),
@@ -220,11 +221,12 @@ switchLayer <- function(sim) {
     aggRTM <- raster::aggregate(aggRTM, fact = 40)
 
     windModel <- try(Cache(getModelList)[17])
+    workingWindCacheId <- "4c8b1213c39a6088"
     if (is(windModel, "try-error")) {
       #library(googledrive);
       #driveDL <- Cache(googledrive::drive_download, as_id("16xEX2HVDTT2voLC5doRDEZ-WzNq_69EP"), overwrite = TRUE)
       #wind <- qs::qread(driveDL$local_path)
-      windCacheId <- "4c8b1213c39a6088"
+      windCacheId <- workingWindCacheId
     } else {
       windCacheId <- NULL
     }
@@ -248,24 +250,40 @@ switchLayer <- function(sim) {
     # windModel <- Cache(getModelList)[17]
     DEM <- Cache(LandR::prepInputsCanDEM, rasterToMatch = sim$rasterToMatch, studyArea = sim$studyArea,
                  destinationPath = dPath)
-    browser()
     stWind <- system.time( # 43 minutes with 3492 locations
+      mess <- capture.output(type = "message",
       wind <- Cache(getModelOutput, 2010, 2021, locations$Name,
                     locations$Y, locations$X, DEM[][cellsWData],
                     modelName = windModel,
                     rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
                     cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
-                    cacheId = windCacheId))
-    message("You may need to update the windCacheId")
+                    cacheId = windCacheId)))
+    ignore <- lapply(mess, function(m) message(crayon::blue(gsub("^.+: mpbClm", "", m))))
+    if (is.null(windCacheId)) {
+      windAttr <- attr(wind, "tags")
+      curCacheId <- if (!is.null(windAttr)) {
+        gsub("cacheId:", "", windAttr)
+      } else {
+        gsub("^.+\\((.+)\\..+\\)", "\\1", grep("Object to retrieve", mess, value  =TRUE))
+      }
+      if (curCacheId != workingWindCacheId) {
+        message(crayon::red("You need to update the windCacheId; it is now ", curCacheId)    )
+      }
+    }
+
 
     # Make RasterStack
     setDT(wind)
     windStk <- stack(raster(aggRTM))
+    mnths <- months(as.POSIXct("2021-01-15") + dmonth(1) * 0:11)
+    whMonths <- 7
+    message("Using only ", crayon::red(paste(mnths[whMonths], collapse = ", ")), " for fitting MPB data")
+
     for (yr in unique(wind$Year)) {
       yrChar <- paste0("X", yr)
       windYr <- wind[Year == yr]
       if (any(colnames(windYr) == "Month")) {
-        windYr <- windYr[Month %in% 6:8]
+        windYr <- windYr[Month %in% whMonths]
       }
 
       # ww <- data.table::melt(windYr, measure.vars = patterns("^W[[:digit:]]"), id.vars = c("KeyID", "Month"))
@@ -305,7 +323,7 @@ switchLayer <- function(sim) {
       # windYr <- wind[Month %in% 6:7 & Year == 2010]
       ang <- sumAngles(angs0To360, windYr[, ..windCols])
       set(windYr, NULL, "angleMean", ang)
-      windYr <- windYr[, list(Longitude, Latitude, angleMean = mean(angleMean)), by = c("KeyID")]
+      windYr <- windYr[, list(Month, Longitude, Latitude, angleMean = mean(angleMean)), by = c("KeyID")]
       dirs <- windYr$angleMean # (apply(windYr[, ..windCols], 1, which.max) - 1) * 10
       spWind <- sf::st_as_sf(SpatialPoints(windYr[, c("Longitude", "Latitude")], proj4string = CRS("+init=epsg:4326")))
       spWind <- sf::st_transform(spWind, crs = st_crs(aggRTM))
@@ -317,7 +335,7 @@ switchLayer <- function(sim) {
     }
 
     # Visualize
-    # Plots(windStk)
+    Plots(windStk, filename = "windMaps")
 
     windMaps <- disaggregate(windStk, fact = 40)
     sim$windMaps <- raster::stack(crop(windMaps, sim$rasterToMatch))
@@ -327,6 +345,11 @@ switchLayer <- function(sim) {
     }
 
   }
+
+  # library(ggspatial)
+  # library(ggplot2)
+  # ggplot() +
+  #   geom_spatial(windStk)
 
   return(invisible(sim))
 }
@@ -386,3 +409,4 @@ sumAngles <- function(angles, magnitude) {
   y <- apply(y, 1, mean)
   deg(atan2(x, y)) %% 360
 }
+
