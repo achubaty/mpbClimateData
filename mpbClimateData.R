@@ -47,7 +47,10 @@ defineModule(sim, list(
                  desc = "Vector of filenames correspoding to climate suitablity map layers",
                  sourceURL = "https://drive.google.com/file/d/1u4TpfkVonGk9FEw5ygShY1xiuk3FqKo3/view?usp=sharing"),
     expectsInput("windMaps", "RasterStack",
-                 desc = "RasterStack of wind maps for every location in the study area",
+                 desc = "RasterStack of dominant wind direction maps for every location and year in the study area",
+                 sourceURL = ""),
+    expectsInput("windSpeedMaps", "RasterStack",
+                 desc = "RasterStack of wind speed maps (km/h) for every location and year in the study area",
                  sourceURL = ""),
     expectsInput("rasterToMatch", "RasterLayer",
                  desc = "if not supplied, will default to standAgeMap", # TODO: description needed
@@ -221,7 +224,7 @@ switchLayer <- function(sim) {
     aggRTM <- raster::aggregate(aggRTM, fact = 40)
 
     windModel <- try(Cache(getModelList)[17])
-    workingWindCacheId <- "4c8b1213c39a6088"
+    workingWindCacheId <- "5f588195a51652d2"
     if (is(windModel, "try-error")) {
       #library(googledrive);
       #driveDL <- Cache(googledrive::drive_download, as_id("16xEX2HVDTT2voLC5doRDEZ-WzNq_69EP"), overwrite = TRUE)
@@ -250,10 +253,11 @@ switchLayer <- function(sim) {
     # windModel <- Cache(getModelList)[17]
     DEM <- Cache(LandR::prepInputsCanDEM, rasterToMatch = sim$rasterToMatch, studyArea = sim$studyArea,
                  destinationPath = dPath)
+    aggDEM <- aggregateRasByDT(DEM, aggRTM, mean)
     stWind <- system.time( # 43 minutes with 3492 locations
       mess <- capture.output(type = "message",
       wind <- Cache(getModelOutput, 2010, 2021, locations$Name,
-                    locations$Y, locations$X, DEM[][cellsWData],
+                    locations$Y, locations$X, aggDEM[][cellsWData],
                     modelName = windModel,
                     rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
                     cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
@@ -276,7 +280,7 @@ switchLayer <- function(sim) {
     setDT(wind)
     windStk <- stack(raster(aggRTM))
     mnths <- months(as.POSIXct("2021-01-15") + dmonth(1) * 0:11)
-    whMonths <- 7
+    whMonths <- 7:8
     message("Using only ", crayon::red(paste(mnths[whMonths], collapse = ", ")),
             " wind directions")
 
@@ -324,22 +328,34 @@ switchLayer <- function(sim) {
       # windYr <- wind[Month %in% 6:7 & Year == 2010]
       ang <- sumAngles(angs0To360, windYr[, ..windCols])
       set(windYr, NULL, "angleMean", ang)
-      windYr <- windYr[, list(Month, Longitude, Latitude, angleMean = mean(angleMean)), by = c("KeyID")]
+      windYr <- windYr[, list(Month = Month[1], Longitude = Longitude[1],
+                              Latitude = Latitude[1], angleMean = mean(angleMean)), by = c("KeyID")]
       dirs <- windYr$angleMean # (apply(windYr[, ..windCols], 1, which.max) - 1) * 10
-      spWind <- sf::st_as_sf(SpatialPoints(windYr[, c("Longitude", "Latitude")], proj4string = CRS("+init=epsg:4326")))
-      spWind <- sf::st_transform(spWind, crs = st_crs(aggRTM))
-      cells <- cellFromXY(aggRTM, sf::st_coordinates(spWind))
+      # spWind <- sf::st_as_sf(SpatialPoints(windYr[, c("Longitude", "Latitude")], proj4string = CRS("+init=epsg:4326")))
+      # spWind <- sf::st_transform(spWind, crs = st_crs(aggRTM))
+      # cells <- cellFromXY(aggRTM, sf::st_coordinates(spWind))
       windYrRas <- raster(aggRTM)
-      windYrRas[cells] <- dirs
+      windYrRas[cellsWData] <- dirs
       # clearPlot(); Plot(windYrRas, new = TRUE)
       windStk[[yrChar]] <- windYrRas
     }
+    windSpeedStk <- raster::stack(windStk)
+
+    # Wind Speed
+    windSpeed <- wind[, list(WindSpeed = WindSpeed[1]), by = c("KeyID", "Year")]
+    windSpeedWide <- dcast(windSpeed, formula = KeyID ~ Year)
+    windSpeedWide <- windSpeedWide[match(unique(wind$KeyID), KeyID )]
+    colnms <- grep("[[:digit:]]{4,4}", colnames(windSpeedWide), value = TRUE)
+    windSpeedStk[cellsWData] <- as.matrix(windSpeedWide[, ..colnms])
+    windSpeedStk <- raster::stack(windSpeedStk)
 
     # Visualize
     Plots(windStk, filename = "windMaps")
+    Plots(windSpeedStk, filename = "windMaps")
 
     windMaps <- disaggregate(windStk, fact = 40)
     sim$windMaps <- raster::stack(crop(windMaps, sim$rasterToMatch))
+    sim$windSpeedMaps <- windSpeedStk
     if (!compareRaster(sim$windMaps, sim$rasterToMatch, stopiffalse = FALSE)) {
       warning("wind raster is not same resolution as sim$rasterToMatch; please debug")
       browser()
