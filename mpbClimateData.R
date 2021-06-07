@@ -280,7 +280,7 @@ switchLayer <- function(sim) {
     setDT(wind)
     windStk <- stack(raster(aggRTM))
     mnths <- months(as.POSIXct("2021-01-15") + dmonth(1) * 0:11)
-    whMonths <- 7:8
+    whMonths <- 6:8
     message("Using only ", crayon::red(paste(mnths[whMonths], collapse = ", ")),
             " wind directions")
 
@@ -347,15 +347,19 @@ switchLayer <- function(sim) {
     windSpeedWide <- windSpeedWide[match(unique(wind$KeyID), KeyID )]
     colnms <- grep("[[:digit:]]{4,4}", colnames(windSpeedWide), value = TRUE)
     windSpeedStk[cellsWData] <- as.matrix(windSpeedWide[, ..colnms])
-    windSpeedStk <- raster::stack(windSpeedStk)
+    windSpeedStk <- raster::stack(windSpeedStk) # convert from Brick
 
     # Visualize
     Plots(windStk, filename = "windMaps")
-    Plots(windSpeedStk, filename = "windMaps")
+    Plots(windSpeedStk, filename = "windSpeedMaps")
 
     windMaps <- disaggregate(windStk, fact = 40)
     sim$windMaps <- raster::stack(crop(windMaps, sim$rasterToMatch))
-    sim$windSpeedMaps <- windSpeedStk
+
+    windSpeedMaps <- disaggregate(windSpeedStk, fact = 40)
+    sim$windSpeedMaps <- raster::stack(crop(windSpeedMaps, sim$rasterToMatch))
+
+
     if (!compareRaster(sim$windMaps, sim$rasterToMatch, stopiffalse = FALSE)) {
       warning("wind raster is not same resolution as sim$rasterToMatch; please debug")
       browser()
