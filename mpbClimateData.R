@@ -16,25 +16,14 @@ defineModule(sim, list(
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("README.txt", "mpbClimateData.Rmd"),
-<<<<<<< HEAD
-  reqdPkgs = list("achubaty/amc@development",
-                  "BioSIM", ## not available on CRAN nor GitHub. See top of this file.
-=======
   reqdPkgs = list("achubaty/amc@development", "BioSIM",
->>>>>>> tmp23
                   "grid",
                   "PredictiveEcology/LandR@LCC2010 (>= 1.0.4)",
                   "magrittr", "maptools",
                   "PredictiveEcology/mpbutils (>= 0.1.2)",
                   "PredictiveEcology/pemisc@development",
-<<<<<<< HEAD
-                  "quickPlot", "raster",
-                  "PredictiveEcology/reproducible@development (>= 1.2.7.9002)",
-                  "sp", "spatialEco"),
-=======
                   "PredictiveEcology/SpaDES.core@development (>= 1.0.7.9000)",
                   "quickPlot", "raster", "PredictiveEcology/reproducible@development (>= 1.2.7.9002)", "sp", "spatialEco"),
->>>>>>> tmp23
   parameters = rbind(
     defineParameter("climateScenario", "character", "RCP45", NA_character_, NA_character_,
                     "The climate scenario to use. One of RCP45 or RCP85."),
@@ -61,15 +50,12 @@ defineModule(sim, list(
     expectsInput("climateMapFiles", "character",
                  desc = "Vector of filenames correspoding to climate suitablity map layers",
                  sourceURL = "https://drive.google.com/file/d/1u4TpfkVonGk9FEw5ygShY1xiuk3FqKo3/view?usp=sharing"),
-<<<<<<< HEAD
-=======
     expectsInput("windMaps", "RasterStack",
                  desc = "RasterStack of dominant wind direction maps for every location and year in the study area",
                  sourceURL = ""),
     expectsInput("windSpeedMaps", "RasterStack",
                  desc = "RasterStack of wind speed maps (km/h) for every location and year in the study area",
                  sourceURL = ""),
->>>>>>> tmp23
     expectsInput("rasterToMatch", "RasterLayer",
                  desc = "if not supplied, will default to standAgeMap",
                  sourceURL = NA),
@@ -223,8 +209,6 @@ switchLayer <- function(sim) {
     sim$climateMapFiles <- files
   }
 
-<<<<<<< HEAD
-=======
   if (!suppliedElsewhere("windMaps")) {
 
     # Make coarser
@@ -380,7 +364,6 @@ switchLayer <- function(sim) {
   # ggplot() +
   #   geom_spatial(windStk)
 
->>>>>>> tmp23
   return(invisible(sim))
 }
 
@@ -405,8 +388,6 @@ importMaps <- function(sim) {
 
   return(sim)
 }
-<<<<<<< HEAD
-=======
 
 aggregateRasByDT <- function(ras, newRas, fn = sum) {
   whNonNA <- which(!is.na(ras[]))
