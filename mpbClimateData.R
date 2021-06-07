@@ -422,5 +422,3 @@ sumAngles <- function(angles, magnitude) {
   y <- apply(y, 1, mean)
   deg(atan2(x, y)) %% 360
 }
-
->>>>>>> tmp23
