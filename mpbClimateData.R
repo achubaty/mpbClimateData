@@ -50,10 +50,10 @@ defineModule(sim, list(
     expectsInput("climateMapFiles", "character",
                  desc = "Vector of filenames correspoding to climate suitablity map layers",
                  sourceURL = "https://drive.google.com/file/d/1u4TpfkVonGk9FEw5ygShY1xiuk3FqKo3/view?usp=sharing"),
-    expectsInput("windMaps", "RasterStack",
+    expectsInput("windDirStack", "RasterStack",
                  desc = "RasterStack of dominant wind direction maps for every location and year in the study area",
                  sourceURL = ""),
-    expectsInput("windSpeedMaps", "RasterStack",
+    expectsInput("windSpeedStack", "RasterStack",
                  desc = "RasterStack of wind speed maps (km/h) for every location and year in the study area",
                  sourceURL = ""),
     expectsInput("rasterToMatch", "RasterLayer",
@@ -209,7 +209,7 @@ switchLayer <- function(sim) {
     sim$climateMapFiles <- files
   }
 
-  if (!suppliedElsewhere("windMaps")) {
+  if (!suppliedElsewhere("windDirStack")) {
 
     # Make coarser
     aggRTM <- raster::raster(sim$rasterToMatch)
@@ -272,7 +272,7 @@ switchLayer <- function(sim) {
     setDT(wind)
     windStk <- stack(raster(aggRTM))
     mnths <- months(as.POSIXct("2021-01-15") + dmonth(1) * 0:11)
-    whMonths <- 6:8
+    whMonths <- 7
     message("Using only ", crayon::red(paste(mnths[whMonths], collapse = ", ")),
             " wind directions")
 
@@ -342,17 +342,17 @@ switchLayer <- function(sim) {
     windSpeedStk <- raster::stack(windSpeedStk) # convert from Brick
 
     # Visualize
-    Plots(windStk, filename = "windMaps")
-    Plots(windSpeedStk, filename = "windSpeedMaps")
+    Plots(windStk, filename = "windDirStack")
+    Plots(windSpeedStk, filename = "windSpeedStack")
 
-    windMaps <- disaggregate(windStk, fact = 40)
-    sim$windMaps <- raster::stack(crop(windMaps, sim$rasterToMatch))
+    windDirStack <- disaggregate(windStk, fact = 40)
+    sim$windDirStack <- raster::stack(crop(windDirStack, sim$rasterToMatch))
 
-    windSpeedMaps <- disaggregate(windSpeedStk, fact = 40)
-    sim$windSpeedMaps <- raster::stack(crop(windSpeedMaps, sim$rasterToMatch))
+    windSpeedStack <- disaggregate(windSpeedStk, fact = 40)
+    sim$windSpeedStack <- raster::stack(crop(windSpeedStack, sim$rasterToMatch))
 
 
-    if (!compareRaster(sim$windMaps, sim$rasterToMatch, stopiffalse = FALSE)) {
+    if (!compareRaster(sim$windDirStack, sim$rasterToMatch, stopiffalse = FALSE)) {
       warning("wind raster is not same resolution as sim$rasterToMatch; please debug")
       browser()
     }
