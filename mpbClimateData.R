@@ -4,10 +4,11 @@
 
 defineModule(sim, list(
   name = "mpbClimateData",
-  description = "Mountain pine beetle climate sensitivity layers",
-  keywords = c("BioSIM", "MPB_SLR"),
+  description = "Mountain pine beetle climate sensitivity, and wind layers",
+  keywords = c("BioSIM", "ClimaticWind_Monthly", "MPB_SLR"),
   authors = c(
-    person(c("Alex", "M"), "Chubaty", email = "achubaty@for-cast.ca", role = c("aut", "cre"))
+    person(c("Alex", "M"), "Chubaty", email = "achubaty@for-cast.ca", role = c("aut", "cre")),
+    person(c("Eliot", "JB"), "McIntire", email = "eliot.mcintire@canada.ca", role = "aut")
   ),
   childModules = character(0),
   version = numeric_version("0.0.1"),
@@ -28,7 +29,7 @@ defineModule(sim, list(
     defineParameter("climateScenario", "character", "RCP45", NA_character_, NA_character_,
                     "The climate scenario to use. One of RCP45 or RCP85."),
     defineParameter("suitabilityIndex", "character", "R", NA_character_, NA_character_,
-                    "The MPB climatic suitabilty index to use. One of S, L, R, or G."),
+                    "The MPB climatic suitabilty index to use. One of 'S', 'L', 'R', or 'G'."),
     defineParameter(".maxMemory", "numeric", 1e+9, NA, NA,
                     "Used to set the 'maxmemory' raster option. See '?rasterOptions'."),
     defineParameter(".plots", "character", "screen", NA_character_, NA_character_,
@@ -83,11 +84,6 @@ doEvent.mpbClimateData <- function(sim, eventTime, eventType, debug = FALSE) {
     "init" = {
       ### check sim init params etc.
       stopifnot(start(sim) > 1981, end(sim) < 2100)
-      if (!require("BioSIM")) {
-        # https://sourceforge.net/p/mrnfforesttools/biosimclient/wiki/BioSIM-R/#requirements
-        install.packages("https://sourceforge.net/projects/repiceasource/files/latest", repos = NULL,  type="source")
-        install.packages("https://sourceforge.net/projects/biosimclient.mrnfforesttools.p/files/latest", repos = NULL,  type="source")
-      }
 
       # do stuff for this event
       sim <- importMaps(sim)
@@ -210,12 +206,11 @@ switchLayer <- function(sim) {
   }
 
   if (!suppliedElsewhere("windDirStack")) {
-
     # Make coarser
     aggRTM <- raster::raster(sim$rasterToMatch)
     aggRTM <- raster::aggregate(aggRTM, fact = 40)
 
-    windModel <- try(Cache(getModelList)[17])
+    windModel <- try(Cache(getModelList)[17]) ## "ClimaticWind_Monthly"
     workingWindCacheId <- "5f588195a51652d2"
     if (is(windModel, "try-error")) {
       #library(googledrive);
@@ -243,38 +238,41 @@ switchLayer <- function(sim) {
     #                          rcp = "RCP85", climModel = "GCM4"))
     #
     # windModel <- Cache(getModelList)[17]
-    DEM <- Cache(LandR::prepInputsCanDEM, rasterToMatch = sim$rasterToMatch, studyArea = sim$studyArea,
+    DEM <- Cache(LandR::prepInputsCanDEM,
+                 rasterToMatch = sim$rasterToMatch,
+                 studyArea = sim$studyArea,
                  destinationPath = dPath)
     aggDEM <- aggregateRasByDT(DEM, aggRTM, mean)
-    stWind <- system.time( # 43 minutes with 3492 locations
-      mess <- capture.output(type = "message",
-      wind <- Cache(getModelOutput, 2010, 2021, locations$Name,
-                    locations$Y, locations$X, aggDEM[][cellsWData],
-                    modelName = windModel,
-                    rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
-                    cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
-                    cacheId = windCacheId)))
+    stWind <- system.time({
+      ## 43 minutes with 3492 locations
+      mess <- capture.output(type = "message", {
+        wind <- Cache(getModelOutput, 2010, 2021, locations$Name,
+                      locations$Y, locations$X, aggDEM[][cellsWData],
+                      modelName = windModel,
+                      rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
+                      cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
+                      cacheId = windCacheId)
+        })
+    })
     ignore <- lapply(mess, function(m) message(crayon::blue(gsub("^.+: mpbClm", "", m))))
     if (is.null(windCacheId)) {
       windAttr <- attr(wind, "tags")
       curCacheId <- if (!is.null(windAttr)) {
         gsub("cacheId:", "", windAttr)
       } else {
-        gsub("^.+\\((.+)\\..+\\)", "\\1", grep("Object to retrieve", mess, value  =TRUE))
+        gsub("^.+\\((.+)\\..+\\)", "\\1", grep("Object to retrieve", mess, value = TRUE))
       }
       if (curCacheId != workingWindCacheId) {
         message(crayon::red("You need to update the windCacheId; it is now ", curCacheId)    )
       }
     }
 
-
     # Make RasterStack
     setDT(wind)
     windStk <- stack(raster(aggRTM))
     mnths <- months(as.POSIXct("2021-01-15") + dmonth(1) * 0:11)
     whMonths <- 7
-    message("Using only ", crayon::red(paste(mnths[whMonths], collapse = ", ")),
-            " wind directions")
+    message("Using only ", crayon::red(paste(mnths[whMonths], collapse = ", ")), " wind directions")
 
     for (yr in unique(wind$Year)) {
       yrChar <- paste0("X", yr)
@@ -296,7 +294,7 @@ switchLayer <- function(sim) {
       # Means converting to x and y dimensions, then summing each of those, then reconverting back
       #  to angles
       # windYr1 <- windYr[, ..cols]
-      angs0To360 <- (seq_along(colnames(windYr[, ..windCols]))-1) * 10
+      angs0To360 <- (seq_along(colnames(windYr[, ..windCols])) - 1) * 10
 
       # ang <- sumAngles(angles = angs0To360, magnitude = windYr1[, ..windCols])
       #
@@ -351,12 +349,10 @@ switchLayer <- function(sim) {
     windSpeedStack <- disaggregate(windSpeedStk, fact = 40)
     sim$windSpeedStack <- raster::stack(crop(windSpeedStack, sim$rasterToMatch))
 
-
-    if (!compareRaster(sim$windDirStack, sim$rasterToMatch, stopiffalse = FALSE)) {
+    if (!compareRaster(sim$windDirStack, sim$windSpeedStack, sim$rasterToMatch, stopiffalse = FALSE)) {
       warning("wind raster is not same resolution as sim$rasterToMatch; please debug")
-      browser()
+      browser() ## TODO: remove
     }
-
   }
 
   # library(ggspatial)
@@ -402,7 +398,6 @@ aggregateRasByDT <- function(ras, newRas, fn = sum) {
   newRasOut[pixes] <- dt2$vals
   names(newRasOut) <- names(ras)
   newRasOut
-
 }
 
 sumAngles <- function(angles, magnitude) {
