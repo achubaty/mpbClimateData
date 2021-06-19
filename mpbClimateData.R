@@ -23,7 +23,7 @@ defineModule(sim, list(
                   "magrittr", "maptools",
                   "PredictiveEcology/mpbutils (>= 0.1.2)",
                   "PredictiveEcology/pemisc@development",
-                  "PredictiveEcology/SpaDES.core@modifyList2 (>= 1.0.8.9001)",
+                  "PredictiveEcology/SpaDES.core@modifyList2 (>= 1.0.8.9002)",
                   "quickPlot", "raster", "PredictiveEcology/reproducible@development (>= 1.2.7.9002)", "sp", "spatialEco"),
   parameters = rbind(
     defineParameter("climateScenario", "character", "RCP45", NA_character_, NA_character_,
@@ -209,7 +209,7 @@ switchLayer <- function(sim) {
     aggRTM <- raster::raster(sim$rasterToMatch)
     aggRTM <- raster::aggregate(aggRTM, fact = 40)
 
-    windModel <- try(Cache(getModelList)[17]) ## "ClimaticWind_Monthly"
+    windModel <- try(getModelList()[17]) ## "ClimaticWind_Monthly"
     workingWindCacheId <- "5f588195a51652d2"
     if (is(windModel, "try-error")) {
       #library(googledrive);
