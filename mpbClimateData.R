@@ -252,7 +252,14 @@ importMaps <- function(sim) {
   aggRTM <- raster::raster(sim$rasterToMatch)
   aggRTM <- raster::aggregate(aggRTM, fact = 40)
 
-  windModel <- try(getModelList()[17]) ## "ClimaticWind_Monthly"
+
+  windModel <- if (!grepl("spades", Sys.info()["nodename"])) {
+    try(getModelList()[17]) ## "ClimaticWind_Monthly"
+  } else {
+    message("Not attempting BioSIM because using BorealCloud where it doesn't work")
+    try(stop(), silent = TRUE)
+  }
+
   workingWindCacheId <- "5f588195a51652d2"
   if (is(windModel, "try-error")) {
     #library(googledrive);
@@ -435,9 +442,14 @@ sumAngles <- function(angles, magnitude) {
 
 randomizeSomeStackLayers <- function(stk, swaps, endTime) {
   rmYears <- paste0("X", swaps$rmYears)
-  if (endTime > min(swaps$rmYears)) {
+  if (endTime >= min(swaps$rmYears)) {
     layerNames <- as.numeric(gsub("X", "", layerNames(stk)))
+    keepLayers <- endTime >= layerNames
+    layerNames <- layerNames[keepLayers]
     srcYears <- paste0("X", swaps$srcYears)
+    lenSrcYears <- length(srcYears)
+    rmYears <- rmYears[seq(length(layerNames) - lenSrcYears)]
+    message("randomizing ", deparse(substitute(stk)), "; removing: ", paste(rmYears, collapse = ", "))
     newYears <- sample(srcYears, size = length(rmYears), replace = TRUE)
     aa <- stk[[srcYears]]
     bb <- stk[[newYears]]
