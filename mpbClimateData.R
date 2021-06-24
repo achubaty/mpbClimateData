@@ -98,20 +98,23 @@ doEvent.mpbClimateData <- function(sim, eventTime, eventType, debug = FALSE) {
 
       # schedule future event(s)
       # sim <- scheduleEvent(sim, start(sim) + 1, "mpbClimateData", "switchLayer", .first())
-      sim <- scheduleEvent(sim, P(sim)$.plotInitialTime, "mpbClimateData", "plot", .last() - 1)
+      # sim <- scheduleEvent(sim, P(sim)$.plotInitialTime, "mpbClimateData", "plot", .last() - 1)
       sim <- scheduleEvent(sim, P(sim)$.saveInitialTime, "mpbClimateData", "save", .last())
     },
     "plot" = {
+      # THIS IS DEFUNCT -- USE Plots functionality instead
       # do stuff for this event
       # names(sim$climateSuitabilityMap) <- "layer"
-      Plots(sim$climateSuitabilityMaps, title = "Climate Suitability Maps", new = TRUE,
-            filename = file.path(outputPath(sim),
-                                 paste0("Climate Suitability Maps, ",
-                                        start(sim), " to ", end(sim), "_",
-                                        Sys.time())))
-      Plots(sim$studyArea, addTo = "sim$climateSuitabilityMaps", gp = gpar(col = "black", fill = 0),
-           title = "", .plots = intersect(P(sim)$.plots, "screen")) # this only works for screen, maybe even not there
+      if (FALSE) {
+        Plots(sim$climateSuitabilityMaps, title = "Climate Suitability Maps", new = TRUE,
+              filename = file.path(outputPath(sim),
+                                   paste0("Climate Suitability Maps, ",
+                                          start(sim), " to ", end(sim), "_",
+                                          Sys.time())))
+        Plots(sim$studyArea, addTo = "sim$climateSuitabilityMaps", gp = gpar(col = "black", fill = 0),
+              title = "", .plots = intersect(P(sim)$.plots, "screen")) # this only works for screen, maybe even not there
 
+      }
       # schedule future event(s)
       sim <- scheduleEvent(sim, time(sim) + P(sim)$.plotInterval, "mpbClimateData", "plot")
     },
@@ -293,7 +296,7 @@ importMaps <- function(sim) {
                     cacheId = windCacheId)
     })
   })
-  ignore <- lapply(mess, function(m) message(crayon::blue(gsub("^.+: mpbClm", "", m))))
+  ignore <- lapply(mess, function(m) message(crayon::blue(gsub("^.+ mpbClm", "", m))))
   if (is.null(windCacheId)) {
     windAttr <- attr(wind, "tags")
     curCacheId <- if (!is.null(windAttr)) {
@@ -357,9 +360,6 @@ importMaps <- function(sim) {
   names(windStk) <- yrsChar
 
   # Visualize
-  Plots(windStk, filename = "windDirStack")
-  Plots(windSpeedStk, filename = "windSpeedStack")
-
   windDirStack <- Cache(disaggregate, windStk, fact = 40)
   sim$windDirStack <- raster::stack(crop(windDirStack, sim$rasterToMatch))
 
@@ -385,20 +385,17 @@ importMaps <- function(sim) {
 
   titl <- "Climate suitability maps"
   Plots(sim$climateSuitabilityMaps, title = titl, new = TRUE,
-        filename = file.path(outputPath(sim),paste0(titl, ", ",
-                                    start(sim), " to ", end(sim), "_",
-                                    Sys.time())))
+        filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
+                                    Sys.time()))
   titl <- "Wind direction maps"
   Plots(sim$windDirStack, title = titl, new = TRUE,
-        filename = file.path(outputPath(sim), paste0(titl, ", ",
-                                    start(sim), " to ", end(sim), "_",
-                                    Sys.time())))
+        filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
+                                    Sys.time()))
   titl <- "Wind speed maps"
   Plots(sim$windSpeedStack, title = titl, new = TRUE,
-        filename = file.path(outputPath(sim),
-                             paste0(titl,", ",
+        filename = paste0(titl,", ",
                                     start(sim), " to ", end(sim), "_",
-                                    Sys.time())))
+                                    Sys.time()))
 
   return(sim)
 }
