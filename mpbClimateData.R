@@ -30,7 +30,7 @@ defineModule(sim, list(
                     "The climate scenario to use. One of RCP45 or RCP85."),
     defineParameter("suitabilityIndex", "character", "R", NA_character_, NA_character_,
                     "The MPB climatic suitabilty index to use. One of 'S', 'L', 'R', or 'G'."),
-    defineParameter("windMonths", "integer", 7, 1, 12,
+    defineParameter("windMonths", "integer", 7L, 1L, 12L,
                     paste("A vector of length 1 or more, indicating the month(s) of the year from which to extract wind data.",
                     "This should correspond to the months of dispersal")),
     defineParameter(".maxMemory", "numeric", 1e+9, NA, NA,
@@ -51,15 +51,15 @@ defineModule(sim, list(
                     "Should this entire module be run with caching activated?")
   ),
   inputObjects = bindrows(
+    expectsInput("climateMapRandomize", "list",
+                 "List with 2 elements: srcYears, rmYears. Each of these should be a numeric vector of years
+                 (sim$climateSuitabilityMaps must have layer names that contain the full 4-digit numeric year, e.g., X2010),
+                 with 'scrYears' being the pool of years to take data from to use in 'rmYears'. This is
+                 intended for cases where future projected climate data is unavailable or corrupt",
+                 sourceURL = "https://drive.google.com/file/d/1u4TpfkVonGk9FEw5ygShY1xiuk3FqKo3/view?usp=sharing"),
     expectsInput("climateMapFiles", "character",
                  desc = "Vector of filenames correspoding to climate suitablity map layers",
                  sourceURL = "https://drive.google.com/file/d/1u4TpfkVonGk9FEw5ygShY1xiuk3FqKo3/view?usp=sharing"),
-    expectsInput("windDirStack", "RasterStack",
-                 desc = "RasterStack of dominant wind direction maps for every location and year in the study area",
-                 sourceURL = ""),
-    expectsInput("windSpeedStack", "RasterStack",
-                 desc = "RasterStack of wind speed maps (km/h) for every location and year in the study area",
-                 sourceURL = ""),
     expectsInput("rasterToMatch", "RasterLayer",
                  desc = "if not supplied, will default to standAgeMap",
                  sourceURL = NA),
@@ -75,7 +75,11 @@ defineModule(sim, list(
   ),
   outputObjects = bindrows(
     # createsOutput("climateMaps", "RasterStack", "Stack of climatic suitablity maps."),
-    createsOutput("climateSuitabilityMaps", "RasterStack", "A time series of climatic suitablity RasterLayers, each with previx 'X' and the year, e.g., 'X2010'")
+    createsOutput("climateSuitabilityMaps", "RasterStack", "A time series of climatic suitablity RasterLayers, each with previx 'X' and the year, e.g., 'X2010'"),
+    createsOutput("windDirStack", "RasterStack",
+                 desc = "RasterStack of dominant wind direction maps for every location and year in the study area"),
+    createsOutput("windSpeedStack", "RasterStack",
+                 desc = "RasterStack of wind speed maps (km/h) for every location and year in the study area"),
   )
 ))
 
@@ -100,9 +104,17 @@ doEvent.mpbClimateData <- function(sim, eventTime, eventType, debug = FALSE) {
     "plot" = {
       # do stuff for this event
       # names(sim$climateSuitabilityMap) <- "layer"
-      Plot(sim$climateSuitabilityMaps, title = "Climate Suitability Maps", new = TRUE)
-      Plot(sim$studyArea, addTo = "sim$climateSuitabilityMaps", gp = gpar(col = "black", fill = 0),
-           title = "")
+      Plots(sim$climateSuitabilityMaps, title = "Climate Suitability Maps", new = TRUE,
+            filename = file.path(outputPath(sim),
+                                 paste0("Climate Suitability Maps, ",
+                                        start(sim), " to ", end(sim), "_",
+                                        Sys.time())))
+      Plots(sim$studyArea, addTo = "sim$climateSuitabilityMaps", gp = gpar(col = "black", fill = 0),
+           title = "",
+           filename = file.path(outputPath(sim),
+                                paste0("Climate Suitability Maps 2, ",
+                                       start(sim), " to ", end(sim), "_",
+                                       Sys.time())))
 
       # schedule future event(s)
       sim <- scheduleEvent(sim, time(sim) + P(sim)$.plotInterval, "mpbClimateData", "plot")
@@ -204,133 +216,8 @@ switchLayer <- function(sim) {
     sim$climateMapFiles <- files
   }
 
-  if (!suppliedElsewhere("windDirStack")) {
-    # Make coarser
-    aggRTM <- raster::raster(sim$rasterToMatch)
-    aggRTM <- raster::aggregate(aggRTM, fact = 40)
-
-    windModel <- try(getModelList()[17]) ## "ClimaticWind_Monthly"
-    workingWindCacheId <- "5f588195a51652d2"
-    if (is(windModel, "try-error")) {
-      #library(googledrive);
-      #driveDL <- Cache(googledrive::drive_download, as_id("16xEX2HVDTT2voLC5doRDEZ-WzNq_69EP"), overwrite = TRUE)
-      #wind <- qs::qread(driveDL$local_path)
-      windCacheId <- workingWindCacheId
-    } else {
-      windCacheId <- NULL
-    }
-    aggRTM <- aggregateRasByDT(sim$rasterToMatch, aggRTM, fn = mean)
-
-    # Make Vector dataset
-    cellsWData <- which(!is.na(aggRTM[]))
-    cells <- xyFromCell(aggRTM, cell = cellsWData)
-    sps <- sf::st_as_sf(SpatialPoints(cells, proj4string = crs(aggRTM)))
-    sps <- sf::st_transform(sps, crs = 4326)#"+init=epsg:3857")#  "4326")
-    locations <- data.table(Name = paste0("ID", 1:NROW(sps)), st_coordinates(sps))
-
-    # Do call to BioSIM
-    # Until this gets fixed in J4R; this is the fix
-    # stWind <- system.time(
-    #   wind <- Cache(getModelOutput, 2010, 2021, locations$Name,
-    #                          locations$Y, locations$X, rep(1000, NROW(sps)),
-    #                          modelName = windModel,
-    #                          rcp = "RCP85", climModel = "GCM4"))
-    #
-    # windModel <- Cache(getModelList)[17]
-    DEM <- Cache(LandR::prepInputsCanDEM,
-                 rasterToMatch = sim$rasterToMatch,
-                 studyArea = sim$studyArea,
-                 destinationPath = dPath)
-    aggDEM <- aggregateRasByDT(DEM, aggRTM, mean)
-    stWind <- system.time({
-      ## 43 minutes with 3492 locations
-      mess <- capture.output(type = "message", {
-        wind <- Cache(getModelOutput, 2010, 2021, locations$Name,
-                      locations$Y, locations$X, aggDEM[][cellsWData],
-                      modelName = windModel,
-                      rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
-                      cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
-                      cacheId = windCacheId)
-        })
-    })
-    ignore <- lapply(mess, function(m) message(crayon::blue(gsub("^.+: mpbClm", "", m))))
-    if (is.null(windCacheId)) {
-      windAttr <- attr(wind, "tags")
-      curCacheId <- if (!is.null(windAttr)) {
-        gsub("cacheId:", "", windAttr)
-      } else {
-        gsub("^.+\\((.+)\\..+\\)", "\\1", grep("Object to retrieve", mess, value = TRUE))
-      }
-      if (curCacheId != workingWindCacheId) {
-        message(crayon::red("You need to update the windCacheId; it is now ", curCacheId)    )
-      }
-    }
-
-    # Make RasterStack
-    setDT(wind)
-    yrsChar <- paste0("X", unique(wind$Year))
-    windStk <- stack(lapply(yrsChar, function(x) aggRTM))
-    windStk[] <- NA
-    windSpeedStk <- windStk
-
-    mnths <- months(as.POSIXct("2021-01-15") + dmonth(1) * 0:11)
-    whMonths <- P(sim)$windMonths
-    message("Using only ", crayon::red(paste(mnths[whMonths], collapse = ", ")),
-            " wind directions")
-
-    if (any(colnames(wind) == "Month")) {
-      wind <- wind[Month %in% whMonths]
-    }
-
-    # Wind Speed
-    windSpeed <- wind[, list(WindSpeed = WindSpeed[1]), by = c("KeyID", "Year")]
-    windSpeedWide <- dcast(windSpeed, formula = KeyID ~ Year)
-    windSpeedWide <- windSpeedWide[match(unique(wind$KeyID), KeyID )]
-    colnms <- grep("[[:digit:]]{4,4}", colnames(windSpeedWide), value = TRUE)
-    windSpeedStk[cellsWData] <- as.matrix(windSpeedWide[, ..colnms])
-    windSpeedStk <- raster::stack(windSpeedStk) # convert from Brick
-    names(windSpeedStk) <- yrsChar
-
-    # Wind Direction
-    windCols <- grep("^W[[:digit:]]", colnames(wind), value = TRUE)
-    cols <- c("KeyID", "Month", windCols)
-
-    # Convert to single main direction -- sum of all vectors (i.e., magnitude and direction)
-    # Means converting to x and y dimensions, then summing each of those, then reconverting back
-    #  to angles
-    angs0To360 <- (seq_along(colnames(wind[, ..windCols]))-1) * 10
-
-    ang <- sumAngles(angs0To360, wind[, ..windCols])
-    set(wind, NULL, "angleMean", ang)
-
-    # For case with multiple months -- this will collapse to 1 datapoint per pixel per year
-    wind <- wind[, list(Month = Month[1], Longitude = Longitude[1],
-                            Latitude = Latitude[1], angleMean = mean(angleMean)),
-                 by = c("Year", "KeyID")]
-
-    # Wind direction
-    windDirWide <- dcast(wind, formula = KeyID ~ Year)
-    windDirWide <- windDirWide[match(unique(wind$KeyID), KeyID )]
-    colnms <- grep("[[:digit:]]{4,4}", colnames(windDirWide), value = TRUE)
-    windStk[cellsWData] <- as.matrix(windDirWide[, ..colnms])
-    windStk <- raster::stack(windStk) # convert from Brick
-    names(windStk) <- yrsChar
-
-    # Visualize
-    Plots(windStk, filename = "windDirStack")
-    Plots(windSpeedStk, filename = "windSpeedStack")
-
-    windDirStack <- Cache(disaggregate, windStk, fact = 40)
-    sim$windDirStack <- raster::stack(crop(windDirStack, sim$rasterToMatch))
-
-    windSpeedStack <- Cache(disaggregate, windSpeedStk, fact = 40)
-    sim$windSpeedStack <- raster::stack(crop(windSpeedStack, sim$rasterToMatch))
-
-    if (!compareRaster(sim$windDirStack, sim$windSpeedStack, sim$rasterToMatch, stopiffalse = FALSE)) {
-      warning("wind raster is not same resolution as sim$rasterToMatch; please debug")
-      browser() ## TODO: remove
-    }
-  }
+  if (!suppliedElsewhere("climateMapRandomize", sim))
+    sim$climateMapRandomize <- list(srcYears = 2010:2021, rmYears = 2022:end(sim))
 
   # library(ggspatial)
   # library(ggplot2)
@@ -342,6 +229,7 @@ switchLayer <- function(sim) {
 
 ### helper functions
 importMaps <- function(sim) {
+  dPath <- asPath(getOption("reproducible.destinationPath", dataPath(sim)), 1)
   ## load the maps from files, crop, reproject, etc.
   # files <- sim$climateMapFiles
   #
@@ -360,6 +248,144 @@ importMaps <- function(sim) {
   #   pemisc::normalizeStack()
   sim$climateSuitabilityMaps <- prepInputs(fun = "qs::qread", destinationPath = inputPath(sim),
                    url = "https://drive.google.com/file/d/1NIqSv0O5DQbm0nf2YZhfOpKqqws8I-vV/view?usp=sharing")
+
+  # Make coarser
+  aggRTM <- raster::raster(sim$rasterToMatch)
+  aggRTM <- raster::aggregate(aggRTM, fact = 40)
+
+  windModel <- try(getModelList()[17]) ## "ClimaticWind_Monthly"
+  workingWindCacheId <- "5f588195a51652d2"
+  if (is(windModel, "try-error")) {
+    #library(googledrive);
+    #driveDL <- Cache(googledrive::drive_download, as_id("16xEX2HVDTT2voLC5doRDEZ-WzNq_69EP"), overwrite = TRUE)
+    #wind <- qs::qread(driveDL$local_path)
+    windCacheId <- workingWindCacheId
+  } else {
+    windCacheId <- NULL
+  }
+  aggRTM <- aggregateRasByDT(sim$rasterToMatch, aggRTM, fn = mean)
+
+  # Make Vector dataset
+  cellsWData <- which(!is.na(aggRTM[]))
+  cells <- xyFromCell(aggRTM, cell = cellsWData)
+  sps <- sf::st_as_sf(SpatialPoints(cells, proj4string = crs(aggRTM)))
+  sps <- sf::st_transform(sps, crs = 4326)#"+init=epsg:3857")#  "4326")
+  locations <- data.table(Name = paste0("ID", 1:NROW(sps)), st_coordinates(sps))
+
+  # Do call to BioSIM
+  # Until this gets fixed in J4R; this is the fix
+  # stWind <- system.time(
+  #   wind <- Cache(getModelOutput, 2010, 2021, locations$Name,
+  #                          locations$Y, locations$X, rep(1000, NROW(sps)),
+  #                          modelName = windModel,
+  #                          rcp = "RCP85", climModel = "GCM4"))
+  #
+  # windModel <- Cache(getModelList)[17]
+  DEM <- Cache(LandR::prepInputsCanDEM,
+               rasterToMatch = sim$rasterToMatch,
+               studyArea = sim$studyArea,
+               destinationPath = dPath)
+  aggDEM <- aggregateRasByDT(DEM, aggRTM, mean)
+  stWind <- system.time({
+    ## 43 minutes with 3492 locations
+    mess <- capture.output(type = "message", {
+      wind <- Cache(getModelOutput, 2010, 2030, locations$Name,
+                    locations$Y, locations$X, aggDEM[][cellsWData],
+                    modelName = windModel,
+                    rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
+                    cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
+                    cacheId = windCacheId)
+    })
+  })
+  ignore <- lapply(mess, function(m) message(crayon::blue(gsub("^.+: mpbClm", "", m))))
+  if (is.null(windCacheId)) {
+    windAttr <- attr(wind, "tags")
+    curCacheId <- if (!is.null(windAttr)) {
+      gsub("cacheId:", "", windAttr)
+    } else {
+      gsub("^.+\\((.+)\\..+\\)", "\\1", grep("Object to retrieve", mess, value = TRUE))
+    }
+    if (curCacheId != workingWindCacheId) {
+      message(crayon::red("You need to update the windCacheId; it is now ", curCacheId)    )
+    }
+  }
+
+  # Make RasterStack
+  setDT(wind)
+  yrsChar <- paste0("X", unique(wind$Year))
+  windStk <- stack(lapply(yrsChar, function(x) aggRTM))
+  windStk[] <- NA
+  windSpeedStk <- windStk
+
+  mnths <- months(as.POSIXct("2021-01-15") + dmonth(1) * 0:11)
+  whMonths <- P(sim)$windMonths
+  message("Using only ", crayon::red(paste(mnths[whMonths], collapse = ", ")),
+          " wind directions")
+
+  if (any(colnames(wind) == "Month")) {
+    wind <- wind[Month %in% whMonths]
+  }
+
+  # Wind Speed
+  windSpeed <- wind[, list(WindSpeed = WindSpeed[1]), by = c("KeyID", "Year")]
+  windSpeedWide <- dcast(windSpeed, formula = KeyID ~ Year, value.var = "WindSpeed")
+  windSpeedWide <- windSpeedWide[match(unique(wind$KeyID), KeyID )]
+  colnms <- grep("[[:digit:]]{4,4}", colnames(windSpeedWide), value = TRUE)
+  windSpeedStk[cellsWData] <- as.matrix(windSpeedWide[, ..colnms])
+  windSpeedStk <- raster::stack(windSpeedStk) # convert from Brick
+  names(windSpeedStk) <- yrsChar
+
+  # Wind Direction
+  windCols <- grep("^W[[:digit:]]", colnames(wind), value = TRUE)
+  cols <- c("KeyID", "Month", windCols)
+
+  # Convert to single main direction -- sum of all vectors (i.e., magnitude and direction)
+  # Means converting to x and y dimensions, then summing each of those, then reconverting back
+  #  to angles
+  angs0To360 <- (seq_along(colnames(wind[, ..windCols]))-1) * 10
+
+  ang <- sumAngles(angs0To360, wind[, ..windCols])
+  set(wind, NULL, "angleMean", ang)
+
+  # For case with multiple months -- this will collapse to 1 datapoint per pixel per year
+  wind <- wind[, list(Month = Month[1], Longitude = Longitude[1],
+                      Latitude = Latitude[1], angleMean = mean(angleMean)),
+               by = c("Year", "KeyID")]
+
+  # Wind direction
+  windDirWide <- dcast(wind, formula = KeyID ~ Year, value.var = "angleMean")
+  windDirWide <- windDirWide[match(unique(wind$KeyID), KeyID )]
+  colnms <- grep("[[:digit:]]{4,4}", colnames(windDirWide), value = TRUE)
+  windStk[cellsWData] <- as.matrix(windDirWide[, ..colnms])
+  windStk <- raster::stack(windStk) # convert from Brick
+  names(windStk) <- yrsChar
+
+  # Visualize
+  Plots(windStk, filename = "windDirStack")
+  Plots(windSpeedStk, filename = "windSpeedStack")
+
+  windDirStack <- Cache(disaggregate, windStk, fact = 40)
+  sim$windDirStack <- raster::stack(crop(windDirStack, sim$rasterToMatch))
+
+  windSpeedStack <- Cache(disaggregate, windSpeedStk, fact = 40)
+  sim$windSpeedStack <- raster::stack(crop(windSpeedStack, sim$rasterToMatch))
+
+  if (!compareRaster(sim$windDirStack, sim$windSpeedStack, sim$rasterToMatch, stopiffalse = FALSE)) {
+    warning("wind raster is not same resolution as sim$rasterToMatch; please debug")
+    browser() ## TODO: remove
+  }
+
+  if (!is.null(sim$climateMapRandomize)) {
+    sim$climateSuitabilityMaps <-
+      randomizeSomeStackLayers(sim$climateSuitabilityMaps, sim$climateMapRandomize,
+                               endTime = end(sim))
+    sim$windDirStack <-
+      randomizeSomeStackLayers(sim$windDirStack, sim$climateMapRandomize,
+                               endTime = end(sim))
+    sim$windSpeedStack <-
+      randomizeSomeStackLayers(sim$windSpeedStack, sim$climateMapRandomize,
+                               endTime = end(sim))
+  }
 
   return(sim)
 }
@@ -395,4 +421,18 @@ sumAngles <- function(angles, magnitude) {
   x <- apply(x, 1, mean)
   y <- apply(y, 1, mean)
   deg(atan2(x, y)) %% 360
+}
+
+randomizeSomeStackLayers <- function(stk, swaps, endTime) {
+  rmYears <- paste0("X", swaps$rmYears)
+  if (endTime > min(swaps$rmYears)) {
+    layerNames <- as.numeric(gsub("X", "", layerNames(stk)))
+    srcYears <- paste0("X", swaps$srcYears)
+    newYears <- sample(srcYears, size = length(rmYears), replace = TRUE)
+    aa <- stk[[srcYears]]
+    bb <- stk[[newYears]]
+    names(bb) <- rmYears
+    stk <- addLayer(aa, bb)
+  }
+  return(stk)
 }
