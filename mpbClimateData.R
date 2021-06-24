@@ -110,11 +110,7 @@ doEvent.mpbClimateData <- function(sim, eventTime, eventType, debug = FALSE) {
                                         start(sim), " to ", end(sim), "_",
                                         Sys.time())))
       Plots(sim$studyArea, addTo = "sim$climateSuitabilityMaps", gp = gpar(col = "black", fill = 0),
-           title = "",
-           filename = file.path(outputPath(sim),
-                                paste0("Climate Suitability Maps 2, ",
-                                       start(sim), " to ", end(sim), "_",
-                                       Sys.time())))
+           title = "", .plots = intersect(P(sim)$.plots, "screen")) # this only works for screen, maybe even not there
 
       # schedule future event(s)
       sim <- scheduleEvent(sim, time(sim) + P(sim)$.plotInterval, "mpbClimateData", "plot")
@@ -386,6 +382,23 @@ importMaps <- function(sim) {
       randomizeSomeStackLayers(sim$windSpeedStack, sim$climateMapRandomize,
                                endTime = end(sim))
   }
+
+  titl <- "Climate suitability maps"
+  Plots(sim$climateSuitabilityMaps, title = titl, new = TRUE,
+        filename = file.path(outputPath(sim),paste0(titl, ", ",
+                                    start(sim), " to ", end(sim), "_",
+                                    Sys.time())))
+  titl <- "Wind direction maps"
+  Plots(sim$windDirStack, title = titl, new = TRUE,
+        filename = file.path(outputPath(sim), paste0(titl, ", ",
+                                    start(sim), " to ", end(sim), "_",
+                                    Sys.time())))
+  titl <- "Wind speed maps"
+  Plots(sim$windSpeedStack, title = titl, new = TRUE,
+        filename = file.path(outputPath(sim),
+                             paste0(titl,", ",
+                                    start(sim), " to ", end(sim), "_",
+                                    Sys.time())))
 
   return(sim)
 }
