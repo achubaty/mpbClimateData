@@ -77,9 +77,9 @@ defineModule(sim, list(
     # createsOutput("climateMaps", "RasterStack", "Stack of climatic suitablity maps."),
     createsOutput("climateSuitabilityMaps", "RasterStack", "A time series of climatic suitablity RasterLayers, each with previx 'X' and the year, e.g., 'X2010'"),
     createsOutput("windDirStack", "RasterStack",
-                 desc = "RasterStack of dominant wind direction maps for every location and year in the study area"),
+                  desc = "RasterStack of dominant wind direction maps for every location and year in the study area"),
     createsOutput("windSpeedStack", "RasterStack",
-                 desc = "RasterStack of wind speed maps (km/h) for every location and year in the study area"),
+                  desc = "RasterStack of wind speed maps (km/h) for every location and year in the study area"),
   )
 ))
 
@@ -245,13 +245,17 @@ importMaps <- function(sim) {
   #   raster::stack() %>%
   #   setNames(layerNames) %>%
   #   pemisc::normalizeStack()
-  sim$climateSuitabilityMaps <- prepInputs(fun = "qs::qread", destinationPath = inputPath(sim),
-                   url = "https://drive.google.com/file/d/1NIqSv0O5DQbm0nf2YZhfOpKqqws8I-vV/view?usp=sharing")
+
+  sim$climateSuitabilityMaps <- prepInputs(
+    url = "https://drive.google.com/file/d/1NIqSv0O5DQbm0nf2YZhfOpKqqws8I-vV/view?usp=sharing",
+    destinationPath = inputPath(sim),
+    fun = "qs::qread"
+  ) ## TODO: do MPB_SLR call direcly:
+    ## LandR::BioSIM_getMPBSLR(dem, years = years, SLR = "R", climModel = "GCM4", rcp = "RCP45")
 
   # Make coarser
   aggRTM <- raster::raster(sim$rasterToMatch)
   aggRTM <- raster::aggregate(aggRTM, fact = 40)
-
 
   windModel <- if (!grepl("spades", Sys.info()["nodename"])) {
     try(getModelList()[17]) ## "ClimaticWind_Monthly"
@@ -348,7 +352,7 @@ importMaps <- function(sim) {
   # Convert to single main direction -- sum of all vectors (i.e., magnitude and direction)
   # Means converting to x and y dimensions, then summing each of those, then reconverting back
   #  to angles
-  angs0To360 <- (seq_along(colnames(wind[, ..windCols]))-1) * 10
+  angs0To360 <- (seq_along(colnames(wind[, ..windCols])) - 1) * 10
 
   ang <- sumAngles(angs0To360, wind[, ..windCols])
   set(wind, NULL, "angleMean", ang)
