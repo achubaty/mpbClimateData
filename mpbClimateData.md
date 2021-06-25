@@ -21,6 +21,10 @@ editor_options:
 
 # Overview
 
+Get MPB climatic suitability and wind layers.
+
+## Climatic suitability indices
+
 Over the last 20 years, and using four indices of MPB climatic suitability, there appears to be a long-term trend in enhanced MPB survival throughout BC and Alberta [@Cooke:2017fem], fuelled by accelerating warmth through the last 20 years.
 The effects of temperature on seasonal biology in the US Rocky Mountains have been modelled by Logan et al. (1992).
 The Logan suitability index (L) is based on summer temperatures [@Logan:2003fr].
@@ -38,6 +42,10 @@ We use the `BioSIM` R package [@Fortin:2021] to get MPB SLR data from BioSim sof
 The values of each of these indices are bound between 0 and 1, and this value is used to scale the vertical shift of the red-top recruitment curve.
 All climate maps are projected using a Lambert Conformal Conic projection and cover all of Canada.
 Where possible, all data downloads and preprocessing were scripted for reproducibility from raw, original sources.
+
+## Wind speed and direction
+
+We use the `BioSIM` R package [@Fortin:2021] to get historical and projected wind data from BioSim software [@Regniere:1995BioSim], and use these to produce maps of wind speed direction for the month of July for each simulation year.
 
 # Usage
 
