@@ -216,7 +216,7 @@ switchLayer <- function(sim) {
   }
 
   if (!suppliedElsewhere("climateMapRandomize", sim))
-    sim$climateMapRandomize <- list(srcYears = 2010:2021, rmYears = 2022:end(sim))
+    sim$climateMapRandomize <- list(srcYears = 2010:2021, rmYears = 2022:(end(sim) + 1))
 
   # library(ggspatial)
   # library(ggplot2)
@@ -381,14 +381,15 @@ importMaps <- function(sim) {
   if (!is.null(sim$climateMapRandomize)) {
     sim$climateSuitabilityMaps <-
       randomizeSomeStackLayers(sim$climateSuitabilityMaps, sim$climateMapRandomize,
-                               endTime = end(sim))
+                               endTime = end(sim) + 1)
     sim$windDirStack <-
       randomizeSomeStackLayers(sim$windDirStack, sim$climateMapRandomize,
-                               endTime = end(sim))
+                               endTime = end(sim) + 1)
     sim$windSpeedStack <-
       randomizeSomeStackLayers(sim$windSpeedStack, sim$climateMapRandomize,
-                               endTime = end(sim))
+                               endTime = end(sim) + 1)
   }
+  message(crayon::green(mean(sim$climateSuitabilityMaps[[nlayers(sim$climateSuitabilityMaps)]][], na.rm = TRUE)))
 
   titl <- "Climate suitability maps"
   Plots(sim$climateSuitabilityMaps, title = titl, new = TRUE,
@@ -448,13 +449,23 @@ randomizeSomeStackLayers <- function(stk, swaps, endTime) {
     layerNames <- layerNames[keepLayers]
     srcYears <- paste0("X", swaps$srcYears)
     lenSrcYears <- length(srcYears)
-    rmYears <- rmYears[seq(length(layerNames) - lenSrcYears)]
+    numNeedYears <- grep(yrNamesPlus1(endTime - 1), rmYears)
+    if (length(numNeedYears) == 0) stop("Need end(sim) to be later")
+    if (numNeedYears > 0) {
+      rmYears <- rmYears[seq(numNeedYears)]
+    }
+
     message("randomizing ", deparse(substitute(stk)), "; removing: ", paste(rmYears, collapse = ", "))
-    newYears <- sample(srcYears, size = length(rmYears), replace = TRUE)
+    newYears <- sample(srcYears, size = numNeedYears, replace = TRUE)
     aa <- stk[[srcYears]]
     bb <- stk[[newYears]]
     names(bb) <- rmYears
     stk <- addLayer(aa, bb)
   }
   return(stk)
+}
+
+yrNamesPlus1 <- function(yrNames) {
+  yrNames <- gsub("X([[:digit:]]{4,4})", "\\1", yrNames)
+  paste0("X", as.integer(yrNames) + 1)
 }
