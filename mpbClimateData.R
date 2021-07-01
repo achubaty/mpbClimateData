@@ -33,7 +33,7 @@ defineModule(sim, list(
     defineParameter("windMonths", "integer", 7L, 1L, 12L,
                     paste("A vector of length 1 or more, indicating the month(s) of the year from which to extract wind data.",
                     "This should correspond to the months of dispersal")),
-    defineParameter(".maxMemory", "numeric", 1e+9, NA, NA,
+    defineParameter(".maxMemory", "numeric", 6e+10, NA, NA,
                     "Used to set the 'maxmemory' raster option. See '?rasterOptions'."),
     defineParameter(".plots", "character", "screen", NA_character_, NA_character_,
                     "This describes the simulation time at which the first plot event should occur"),
@@ -51,11 +51,12 @@ defineModule(sim, list(
                     "Should this entire module be run with caching activated?")
   ),
   inputObjects = bindrows(
-    expectsInput("climateMapRandomize", "list",
+    expectsInput("climateMapRandomize", c("list", "logical"),
                  "List with 2 elements: srcYears, rmYears. Each of these should be a numeric vector of years
                  (sim$climateSuitabilityMaps must have layer names that contain the full 4-digit numeric year, e.g., X2010),
                  with 'scrYears' being the pool of years to take data from to use in 'rmYears'. This is
-                 intended for cases where future projected climate data is unavailable or corrupt",
+                 intended for cases where future projected climate data is unavailable or corrupt. If TRUE, then it will
+                 currently select 2021 as the final year of 'data' and every year beyond that will be randomized",
                  sourceURL = "https://drive.google.com/file/d/1u4TpfkVonGk9FEw5ygShY1xiuk3FqKo3/view?usp=sharing"),
     expectsInput("climateMapFiles", "character",
                  desc = "Vector of filenames correspoding to climate suitablity map layers",
@@ -215,8 +216,12 @@ switchLayer <- function(sim) {
     sim$climateMapFiles <- files
   }
 
-  if (!suppliedElsewhere("climateMapRandomize", sim))
-    sim$climateMapRandomize <- list(srcYears = 2010:2021, rmYears = 2022:(end(sim) + 1))
+  if (!suppliedElsewhere("climateMapRandomize", sim)) {
+    if (end(sim) > 2021)
+      sim$climateMapRandomize <- TRUE
+
+  }
+
 
   # library(ggspatial)
   # library(ggplot2)
@@ -228,6 +233,34 @@ switchLayer <- function(sim) {
 
 ### helper functions
 importMaps <- function(sim) {
+
+  # CHECK MEMORY -- THIS WORKS BETTER WITH A LOT
+  minMemNeeded <- 6e10
+  for (i in 1:2) {
+    coToIgnore <- capture.output(
+      ro <- rasterOptions()
+    )
+    if (Par$.maxMemory >= minMemNeeded) {
+      if (ro$maxmemory < Par$.maxMemory) {
+        message("Increasing rasterOptions maxmemory to P(sim)$.maxMemory, which is ", Par$.maxMemory)
+        rasterOptions(maxmemory = Par$.maxMemory)
+      }
+    } else {
+      if (ro$maxmemory < minMemNeeded && pemisc::availableMemory() > 2e11) {
+        message("Your machine has plenty of memory yet rasterOptions is set to ", ro$maxmemory)
+        if (Par$.maxMemory > ro$maxmemory) {
+          message(". Increasing this to ", Par$.maxMemory)
+          rasterOptions(maxmemory = Par$.maxMemory)
+        } else {
+          message("Consider increasing this with e.g., set .maxMemory parameter in this module to ", minMemNeeded,
+                  " or rasterOptions(maxmemory = ", minMemNeeded,")")
+        }
+      } else {
+        break
+      }
+    }
+  }
+
   dPath <- asPath(getOption("reproducible.destinationPath", dataPath(sim)), 1)
   ## load the maps from files, crop, reproject, etc.
   # files <- sim$climateMapFiles
@@ -249,8 +282,14 @@ importMaps <- function(sim) {
                    url = "https://drive.google.com/file/d/1NIqSv0O5DQbm0nf2YZhfOpKqqws8I-vV/view?usp=sharing")
 
   # Make coarser
+
+  resClimate <- rep(1e4, 2)
+  message("Using Climate resolution (wind, climate suitability) of ", paste(resClimate, collapse = " x "), " m")
+
   aggRTM <- raster::raster(sim$rasterToMatch)
-  aggRTM <- raster::aggregate(aggRTM, fact = 40)
+  fact <- sqrt(prod(resClimate)/prod(res(sim$rasterToMatch)))
+
+  aggRTM <- raster::aggregate(aggRTM, fact = fact)
 
 
   windModel <- if (!grepl("spades", Sys.info()["nodename"])) {
@@ -260,7 +299,7 @@ importMaps <- function(sim) {
     try(stop(), silent = TRUE)
   }
 
-  workingWindCacheId <- "5f588195a51652d2"
+  workingWindCacheId <- "d7cda5ca25c3540c" # "5f588195a51652d2"
   if (is(windModel, "try-error")) {
     #library(googledrive);
     #driveDL <- Cache(googledrive::drive_download, as_id("16xEX2HVDTT2voLC5doRDEZ-WzNq_69EP"), overwrite = TRUE)
@@ -269,7 +308,7 @@ importMaps <- function(sim) {
   } else {
     windCacheId <- NULL
   }
-  aggRTM <- aggregateRasByDT(sim$rasterToMatch, aggRTM, fn = mean)
+  aggRTM <- Cache(aggregateRasByDT, sim$rasterToMatch, aggRTM, fn = mean)
 
   # Make Vector dataset
   cellsWData <- which(!is.na(aggRTM[]))
@@ -291,11 +330,11 @@ importMaps <- function(sim) {
                rasterToMatch = sim$rasterToMatch,
                studyArea = sim$studyArea,
                destinationPath = dPath)
-  aggDEM <- aggregateRasByDT(DEM, aggRTM, mean)
+  aggDEM <- Cache(aggregateRasByDT, DEM, aggRTM, mean)
   stWind <- system.time({
     ## 43 minutes with 3492 locations
     mess <- capture.output(type = "message", {
-      wind <- Cache(getModelOutput, 2010, 2030, locations$Name,
+      wind <- Cache(getModelOutput, 2009, 2030, locations$Name,
                     locations$Y, locations$X, aggDEM[][cellsWData],
                     modelName = windModel,
                     rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
@@ -366,44 +405,83 @@ importMaps <- function(sim) {
   windStk <- raster::stack(windStk) # convert from Brick
   names(windStk) <- yrsChar
 
-  # Visualize
-  windDirStack <- Cache(disaggregate, windStk, fact = 40)
-  sim$windDirStack <- raster::stack(crop(windDirStack, sim$rasterToMatch))
+  # firstYearWind <- grep(start(sim), names(windStk))
+  # if (firstYearWind > 1) {
+  #   windStk <- raster::dropLayer(windStk, seq_len(firstYearWind - 1))
+  #   windSpeedStk <- raster::dropLayer(windSpeedStk, seq_len(firstYearWind - 1))
+  # }
 
-  windSpeedStack <- Cache(disaggregate, windSpeedStk, fact = 40)
-  sim$windSpeedStack <- raster::stack(crop(windSpeedStack, sim$rasterToMatch))
+  digWindStk <- fastdigest::fastdigest(list(windStk, fact)) # digest the small one
+  digWindSpeedStk <- fastdigest::fastdigest(list(windSpeedStk, fact)) # digest the small one
+  digCS <- fastdigest::fastdigest(sim$climateSuitabilityMaps)
+  # At the end of this module, the windDirStack, windSpeedStack and climateSuitability will
+  #    all be at rasterToMatch -- which may not be what is needed for mpbRedTopSpread
+  #    This will be re-aggregated there if needed.
+
+  # Visualize the small ones, including incorrect for posterity sake if they are in the future
+  titl <- "Small climate suitability maps, pre-randomization"
+  Cache(Plots, sim$climateSuitabilityMaps, title = titl, new = TRUE,
+        filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
+                          Sys.time()), omitArgs = c("filename", "data"), .cacheExtra = digCS)
+  titl <- "Small wind direction maps, pre-randomization"
+  Cache(Plots, sim$windDirStack, title = titl, new = TRUE,
+        filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
+                          Sys.time()), omitArgs = c("filename", "data"), .cacheExtra = digWindStk)
+  titl <- "Small wind speed maps, pre-randomization"
+  Cache(Plots, sim$windSpeedStack, title = titl, new = TRUE,
+        filename = paste0(titl,", ",
+                          start(sim), " to ", end(sim), "_",
+                          Sys.time()), omitArgs = c("filename", "data"), .cacheExtra = digWindSpeedStk)
+
+
+  sim$windDirStack <- Cache(disaggregateToStack, windStk, sim$rasterToMatch, fact = fact,
+                            .cacheExtra = digWindStk, omitArgs = c("x", "y", "fact"))
+
+  sim$windSpeedStack <- Cache(disaggregateToStack, windSpeedStk, sim$rasterToMatch, fact = fact,
+                              .cacheExtra = digWindSpeedStk, omitArgs = c("x", "y", "fact"))
 
   if (!compareRaster(sim$windDirStack, sim$windSpeedStack, sim$rasterToMatch, stopiffalse = FALSE)) {
     warning("wind raster is not same resolution as sim$rasterToMatch; please debug")
     browser() ## TODO: remove
   }
 
-  if (!is.null(sim$climateMapRandomize)) {
-    sim$climateSuitabilityMaps <-
-      randomizeSomeStackLayers(sim$climateSuitabilityMaps, sim$climateMapRandomize,
-                               endTime = end(sim) + 1)
-    sim$windDirStack <-
-      randomizeSomeStackLayers(sim$windDirStack, sim$climateMapRandomize,
-                               endTime = end(sim) + 1)
-    sim$windSpeedStack <-
-      randomizeSomeStackLayers(sim$windSpeedStack, sim$climateMapRandomize,
-                               endTime = end(sim) + 1)
+  if (end(sim) > 2021) {
+    if (!is.null(sim$climateMapRandomize)) {
+      if (isTRUE(sim$climateMapRandomize)) {
+        sim$climateMapRandomize <- list(srcYears = 2010:2021, rmYears = 2022:(end(sim) + 1))
+
+      }
+      sim$climateSuitabilityMaps <-
+        randomizeSomeStackLayers(sim$climateSuitabilityMaps, sim$climateMapRandomize,
+                                 endTime = end(sim) + 1)
+      sim$windDirStack <-
+        randomizeSomeStackLayers(sim$windDirStack, sim$climateMapRandomize,
+                                 endTime = end(sim) + 1)
+      sim$windSpeedStack <-
+        randomizeSomeStackLayers(sim$windSpeedStack, sim$climateMapRandomize,
+                                 endTime = end(sim) + 1)
+    }
+    digWindStk <- fastdigest::fastdigest(list(sim$windDirStack, fact)) # need to update; now has new layers
+    digWindSpeedStk <- fastdigest::fastdigest(list(sim$windSpeedStack, fact)) # need to update; now has new layers
+
   }
   message(crayon::green(mean(sim$climateSuitabilityMaps[[nlayers(sim$climateSuitabilityMaps)]][], na.rm = TRUE)))
 
+  # Visualize
+  digCS <- fastdigest::fastdigest(sim$climateSuitabilityMaps)
   titl <- "Climate suitability maps"
-  Plots(sim$climateSuitabilityMaps, title = titl, new = TRUE,
+  Cache(Plots, sim$climateSuitabilityMaps, title = titl, new = TRUE,
         filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
-                                    Sys.time()))
+                                    Sys.time()), omitArgs = c("filename", "data"), .cacheExtra = digCS)
   titl <- "Wind direction maps"
-  Plots(sim$windDirStack, title = titl, new = TRUE,
+  Cache(Plots, sim$windDirStack, title = titl, new = TRUE,
         filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
-                                    Sys.time()))
+                                    Sys.time()), omitArgs = c("filename", "data"), .cacheExtra = digWindStk)
   titl <- "Wind speed maps"
-  Plots(sim$windSpeedStack, title = titl, new = TRUE,
+  Cache(Plots, sim$windSpeedStack, title = titl, new = TRUE,
         filename = paste0(titl,", ",
                                     start(sim), " to ", end(sim), "_",
-                                    Sys.time()))
+                                    Sys.time()), omitArgs = c("filename", "data"), .cacheExtra = digWindSpeedStk)
 
   return(sim)
 }
@@ -468,4 +546,10 @@ randomizeSomeStackLayers <- function(stk, swaps, endTime) {
 yrNamesPlus1 <- function(yrNames) {
   yrNames <- gsub("X([[:digit:]]{4,4})", "\\1", yrNames)
   paste0("X", as.integer(yrNames) + 1)
+}
+
+disaggregateToStack <- function(x, y, fact) {
+  x <- disaggregate(x, fact)
+  rr <- crop(x, y)
+  raster::stack(rr)
 }
