@@ -463,7 +463,6 @@ importMaps <- function(sim) {
   titl <- "Small climate suitability maps, pre-randomization"
   stNoColons <- gsub(":", "-", format(Sys.time()))
   fn <- paste0(titl, ", ", start(sim), " to ", end(sim), "_",stNoColons )
-  browser()
   Cache(Plots, sim$climateSuitabilityMaps, title = titl, new = TRUE,
         filename = fn, omitArgs = c("filename", "data"), .cacheExtra = digCS)
   # titl <- "Small wind direction maps, pre-randomization"
