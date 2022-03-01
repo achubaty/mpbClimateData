@@ -293,15 +293,8 @@ importMaps <- function(sim) {
     try(stop(), silent = TRUE)
   }
 
-  workingWindCacheId <- "2789d98628bd1552" # "5f588195a51652d2"
-  if (is(windModel, "try-error")) {
-    #library(googledrive);
-    #driveDL <- Cache(googledrive::drive_download, as_id("16xEX2HVDTT2voLC5doRDEZ-WzNq_69EP"), overwrite = TRUE)
-    #wind <- qs::qread(driveDL$local_path)
-    windCacheId <- workingWindCacheId
-  } else {
-    windCacheId <- NULL
-  }
+  # workingWindCacheId <- "2789d98628bd1552" # "5f588195a51652d2"
+  workingWindCacheIds = c('28c428e741e18c6f', '7c98cfb38d1b0783', '75b95f32359cbe0c', 'ed8bff9a39b67a94')
   aggRTM <- Cache(aggregateRasByDT, sim$rasterToMatch, aggRTM, fn = mean)
 
   # Make Vector dataset
@@ -309,7 +302,8 @@ importMaps <- function(sim) {
   cells <- xyFromCell(aggRTM, cell = cellsWData)
   sps <- sf::st_as_sf(SpatialPoints(cells, proj4string = crs(aggRTM)))
   sps <- sf::st_transform(sps, crs = 4326)#"+init=epsg:3857")#  "4326")
-  locations <- data.table(Name = paste0("ID", 1:NROW(sps)), st_coordinates(sps), cellsWData = cellsWData)
+  locations <- data.table(Name = paste0("ID", 1:NROW(sps)), st_coordinates(sps),
+                          cellsWData = cellsWData)
 
   # Do call to BioSIM
   # Until this gets fixed in J4R; this is the fix
@@ -325,42 +319,76 @@ importMaps <- function(sim) {
                studyArea = sim$studyArea,
                destinationPath = dPath)
   aggDEM <- Cache(aggregateRasByDT, DEM, aggRTM, mean)
+  splitInd <- ceiling(1:NROW(locations)/1000)
+  locationsList <- split(locations, splitInd)
+  if (is(windModel, "try-error")) {
+    #library(googledrive);
+    #driveDL <- Cache(googledrive::drive_download, as_id("16xEX2HVDTT2voLC5doRDEZ-WzNq_69EP"), overwrite = TRUE)
+    #wind <- qs::qread(driveDL$local_path)
+    windCacheId <- workingWindCacheIds
+  } else {
+    windCacheId <- lapply(locationsList, function(x) NULL)
+  }
+
   stWind <- system.time({
     ## 43 minutes with 3492 locations
     mess <- capture.output(type = "message", {
-      # wind <- Cache(getModelOutput, 2009, 2030, locations$Name,
-      #               locations$Y, locations$X, aggDEM[][cellsWData],
-      #               modelName = windModel,
-      #               rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
-      #               cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
-      #               cacheId = windCacheId)
-      wind <- Cache(by, locations, modelNames = windModel,
-                    INDICES = ceiling(1:NROW(locations)/1000), function(location, modelNames) {
+      wind <- Map(location = locationsList, cacheId = windCacheId,
+                  MoreArgs = list(modelNames = windModel),
+                  function(location, cacheId, modelNames) {
         Cache(generateWeather, fromYr = 2009, toYr = 2030, location$Name,
-                      latDeg = location$Y, longDeg = location$X,
-                      elevM = aggDEM[][location$cellsWData],
-                      modelNames = modelNames,
-                      rcp = "RCP85", climModel = "GCM4", useCloud = FALSE,
-                      cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
-                      cacheId = windCacheId)
+              latDeg = location$Y, longDeg = location$X,
+              elevM = aggDEM[][location$cellsWData],
+              modelNames = modelNames,
+              rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
+              cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
+              cacheId = cacheId)
       })
+
+
+      # stWind <- system.time({
+      #   ## 43 minutes with 3492 locations
+      #   mess <- capture.output(type = "message", {
+      #     # wind <- Cache(getModelOutput, 2009, 2030, locations$Name,
+      #     #               locations$Y, locations$X, aggDEM[][cellsWData],
+      #     #               modelName = windModel,
+      #     #               rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
+      #     #               cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
+      #     #               cacheId = windCacheId)
+      #     wind <- by(locations, modelNames = windModel,
+      #                   INDICES = ceiling(1:NROW(locations)/1000), function(location, modelNames) {
+      #       Cache(generateWeather, fromYr = 2009, toYr = 2030, location$Name,
+      #                     latDeg = location$Y, longDeg = location$X,
+      #                     elevM = aggDEM[][location$cellsWData],
+      #                     modelNames = modelNames,
+      #                     rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
+      #                     cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
+      #                     cacheId = windCacheId)
+      #     })
+        })
     })
-  })
-  ignore <- lapply(mess, function(m) message(crayon::blue(gsub("^.+ mpbClm", "", m))))
-  if (is.null(windCacheId)) {
-    windAttr <- attr(wind, "tags")
-    curCacheId <- if (!is.null(windAttr)) {
-      gsub("cacheId:", "", windAttr)
-    } else {
-      gsub("^.+\\((.+)\\..+\\)", "\\1", grep("Object to retrieve", mess, value = TRUE))
-    }
-    if (curCacheId != workingWindCacheId) {
-      message(crayon::red("You need to update the windCacheId; it is now ", curCacheId)    )
-    }
+
+  curCacheIds <- gsub(".+\\((.+)\\..+\\).+$", "\\1", grep("Object", mess, value = TRUE))
+  if (all(curCacheIds != workingWindCacheIds)) {
+    message(crayon::red("You need to update the windCacheId; it is now: ")    )
+    message(paste0("windCacheId = c('", paste(curCacheIds, collapse = "', '"), "')"))
   }
 
+  ignore <- lapply(mess, function(m) message(crayon::blue(gsub("^.+ mpbClm", "", m))))
+  # if (is.null(windCacheId)) {
+  #   windAttr <- attr(wind, "tags")
+  #   curCacheId <- if (!is.null(windAttr)) {
+  #     gsub("cacheId:", "", windAttr)
+  #   } else {
+  #     gsub("^.+\\((.+)\\..+\\)", "\\1", grep("Object to retrieve", mess, value = TRUE))
+  #   }
+  #   if (curCacheId != workingWindCacheId) {
+  #     message(crayon::red("You need to update the windCacheId; it is now ", curCacheId)    )
+  #   }
+  # }
+
   # Make RasterStack
-  wind <- rbindlist(wind)
+  wind <- rbindlist(lapply(wind, function(w) w[[1]])) # it is now nested inside a list
   setDT(wind)
   yrsChar <- paste0("X", unique(wind$Year))
   windStk <- stack(lapply(yrsChar, function(x) aggRTM))
