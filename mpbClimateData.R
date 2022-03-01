@@ -102,23 +102,6 @@ doEvent.mpbClimateData <- function(sim, eventTime, eventType, debug = FALSE) {
       # sim <- scheduleEvent(sim, P(sim)$.plotInitialTime, "mpbClimateData", "plot", .last() - 1)
       sim <- scheduleEvent(sim, P(sim)$.saveInitialTime, "mpbClimateData", "save", .last())
     },
-    "plot" = {
-      # THIS IS DEFUNCT -- USE Plots functionality instead
-      # do stuff for this event
-      # names(sim$climateSuitabilityMap) <- "layer"
-      if (FALSE) {
-        Plots(sim$climateSuitabilityMaps, title = "Climate Suitability Maps", new = TRUE,
-              filename = file.path(outputPath(sim),
-                                   paste0("Climate Suitability Maps, ",
-                                          start(sim), " to ", end(sim), "_",
-                                          Sys.time())))
-        Plots(sim$studyArea, addTo = "sim$climateSuitabilityMaps", gp = gpar(col = "black", fill = 0),
-              title = "", .plots = intersect(P(sim)$.plots, "screen")) # this only works for screen, maybe even not there
-
-      }
-      # schedule future event(s)
-      sim <- scheduleEvent(sim, time(sim) + P(sim)$.plotInterval, "mpbClimateData", "plot")
-    },
     "switchLayer" = {
       sim <- switchLayer(sim)
 
@@ -297,13 +280,20 @@ importMaps <- function(sim) {
   aggRTM <- raster::aggregate(aggRTM, fact = fact)
 
   windModel <- if (!grepl("spades", Sys.info()["nodename"])) {
-    try(getModelList()[17]) ## "ClimaticWind_Monthly"
+    gml <- try(getModelList())
+    if (is(gml, "try-error"))
+      "ClimaticWind_Monthly"
+    else {
+      whModel <- grep("ClimaticWind_Monthly", gml)
+      gml[whModel] ## "ClimaticWind_Monthly"
+    }
+
   } else {
     message("Not attempting BioSIM because using BorealCloud where it doesn't work")
     try(stop(), silent = TRUE)
   }
 
-  workingWindCacheId <- "d7cda5ca25c3540c" # "5f588195a51652d2"
+  workingWindCacheId <- "2789d98628bd1552" # "5f588195a51652d2"
   if (is(windModel, "try-error")) {
     #library(googledrive);
     #driveDL <- Cache(googledrive::drive_download, as_id("16xEX2HVDTT2voLC5doRDEZ-WzNq_69EP"), overwrite = TRUE)
@@ -319,7 +309,7 @@ importMaps <- function(sim) {
   cells <- xyFromCell(aggRTM, cell = cellsWData)
   sps <- sf::st_as_sf(SpatialPoints(cells, proj4string = crs(aggRTM)))
   sps <- sf::st_transform(sps, crs = 4326)#"+init=epsg:3857")#  "4326")
-  locations <- data.table(Name = paste0("ID", 1:NROW(sps)), st_coordinates(sps))
+  locations <- data.table(Name = paste0("ID", 1:NROW(sps)), st_coordinates(sps), cellsWData = cellsWData)
 
   # Do call to BioSIM
   # Until this gets fixed in J4R; this is the fix
@@ -338,12 +328,22 @@ importMaps <- function(sim) {
   stWind <- system.time({
     ## 43 minutes with 3492 locations
     mess <- capture.output(type = "message", {
-      wind <- Cache(getModelOutput, 2009, 2030, locations$Name,
-                    locations$Y, locations$X, aggDEM[][cellsWData],
-                    modelName = windModel,
-                    rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
-                    cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
-                    cacheId = windCacheId)
+      # wind <- Cache(getModelOutput, 2009, 2030, locations$Name,
+      #               locations$Y, locations$X, aggDEM[][cellsWData],
+      #               modelName = windModel,
+      #               rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
+      #               cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
+      #               cacheId = windCacheId)
+      wind <- Cache(by, locations, modelNames = windModel,
+                    INDICES = ceiling(1:NROW(locations)/1000), function(location, modelNames) {
+        Cache(generateWeather, fromYr = 2009, toYr = 2030, location$Name,
+                      latDeg = location$Y, longDeg = location$X,
+                      elevM = aggDEM[][location$cellsWData],
+                      modelNames = modelNames,
+                      rcp = "RCP85", climModel = "GCM4", useCloud = FALSE,
+                      cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
+                      cacheId = windCacheId)
+      })
     })
   })
   ignore <- lapply(mess, function(m) message(crayon::blue(gsub("^.+ mpbClm", "", m))))
@@ -360,6 +360,7 @@ importMaps <- function(sim) {
   }
 
   # Make RasterStack
+  wind <- rbindlist(wind)
   setDT(wind)
   yrsChar <- paste0("X", unique(wind$Year))
   windStk <- stack(lapply(yrsChar, function(x) aggRTM))
@@ -386,6 +387,14 @@ importMaps <- function(sim) {
 
   # Wind Direction
   windCols <- grep("^W[[:digit:]]", colnames(wind), value = TRUE)
+
+  # There are cases where one or more columns is character
+  areAllNumerics <- which(!sapply(wind[, ..windCols], function(x) all(is(x, "numeric"))))
+  if (length(areAllNumerics) > 0) {
+    chColNames <- names(areAllNumerics)
+    wind[, (chColNames) := lapply(.SD, function(x) as.numeric(x)), .SDcols = chColNames]
+  }
+
   cols <- c("KeyID", "Month", windCols)
 
   # Convert to single main direction -- sum of all vectors (i.e., magnitude and direction)
@@ -424,18 +433,20 @@ importMaps <- function(sim) {
 
   # Visualize the small ones, including incorrect for posterity sake if they are in the future
   titl <- "Small climate suitability maps, pre-randomization"
+  stNoColons <- gsub(":", "-", format(Sys.time()))
+  fn <- paste0(titl, ", ", start(sim), " to ", end(sim), "_",stNoColons )
+  browser()
   Cache(Plots, sim$climateSuitabilityMaps, title = titl, new = TRUE,
-        filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
-                          Sys.time()), omitArgs = c("filename", "data"), .cacheExtra = digCS)
-  titl <- "Small wind direction maps, pre-randomization"
-  Cache(Plots, sim$windDirStack, title = titl, new = TRUE,
-        filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
-                          Sys.time()), omitArgs = c("filename", "data"), .cacheExtra = digWindStk)
-  titl <- "Small wind speed maps, pre-randomization"
-  Cache(Plots, sim$windSpeedStack, title = titl, new = TRUE,
-        filename = paste0(titl,", ",
-                          start(sim), " to ", end(sim), "_",
-                          Sys.time()), omitArgs = c("filename", "data"), .cacheExtra = digWindSpeedStk)
+        filename = fn, omitArgs = c("filename", "data"), .cacheExtra = digCS)
+  # titl <- "Small wind direction maps, pre-randomization"
+  # Cache(Plots, sim$windDirStack, title = titl, new = TRUE,
+  #       filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
+  #                         stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digWindStk)
+  # titl <- "Small wind speed maps, pre-randomization"
+  # Cache(Plots, sim$windSpeedStack, title = titl, new = TRUE,
+  #       filename = paste0(titl,", ",
+  #                         start(sim), " to ", end(sim), "_",
+  #                         stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digWindSpeedStk)
 
 
   sim$windDirStack <- Cache(disaggregateToStack, windStk, sim$rasterToMatch, fact = fact,
@@ -476,16 +487,16 @@ importMaps <- function(sim) {
   titl <- "Climate suitability maps"
   Cache(Plots, sim$climateSuitabilityMaps, title = titl, new = TRUE,
         filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
-                                    Sys.time()), omitArgs = c("filename", "data"), .cacheExtra = digCS)
+                                    stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digCS)
   titl <- "Wind direction maps"
   Cache(Plots, sim$windDirStack, title = titl, new = TRUE,
         filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
-                                    Sys.time()), omitArgs = c("filename", "data"), .cacheExtra = digWindStk)
+                                    stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digWindStk)
   titl <- "Wind speed maps"
   Cache(Plots, sim$windSpeedStack, title = titl, new = TRUE,
         filename = paste0(titl,", ",
                                     start(sim), " to ", end(sim), "_",
-                                    Sys.time()), omitArgs = c("filename", "data"), .cacheExtra = digWindSpeedStk)
+                                    stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digWindSpeedStk)
 
   return(sim)
 }
