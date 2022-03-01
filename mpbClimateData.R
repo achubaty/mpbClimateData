@@ -32,7 +32,7 @@ defineModule(sim, list(
                     "The MPB climatic suitabilty index to use. One of 'S', 'L', 'R', or 'G'."),
     defineParameter("windMonths", "integer", 7L, 1L, 12L,
                     paste("A vector of length 1 or more, indicating the month(s) of the year from which to extract wind data.",
-                    "This should correspond to the months of dispersal")),
+                          "This should correspond to the months of dispersal")),
     defineParameter(".maxMemory", "numeric", 6e+10, NA, NA,
                     "Used to set the 'maxmemory' raster option. See '?rasterOptions'."),
     defineParameter(".plots", "character", "screen", NA_character_, NA_character_,
@@ -89,26 +89,26 @@ defineModule(sim, list(
 
 doEvent.mpbClimateData <- function(sim, eventTime, eventType, debug = FALSE) {
   switch(eventType,
-    "init" = {
-      ### check sim init params etc.
-      stopifnot(start(sim) > 1981, end(sim) < 2100)
+         "init" = {
+           ### check sim init params etc.
+           stopifnot(start(sim) > 1981, end(sim) < 2100)
 
-      # do stuff for this event
-      sim <- importMaps(sim)
-      # sim <- switchLayer(sim)
+           # do stuff for this event
+           sim <- importMaps(sim)
+           # sim <- switchLayer(sim)
 
-      # schedule future event(s)
-      # sim <- scheduleEvent(sim, start(sim) + 1, "mpbClimateData", "switchLayer", .first())
-      # sim <- scheduleEvent(sim, P(sim)$.plotInitialTime, "mpbClimateData", "plot", .last() - 1)
-      sim <- scheduleEvent(sim, P(sim)$.saveInitialTime, "mpbClimateData", "save", .last())
-    },
-    "switchLayer" = {
-      sim <- switchLayer(sim)
+           # schedule future event(s)
+           # sim <- scheduleEvent(sim, start(sim) + 1, "mpbClimateData", "switchLayer", .first())
+           # sim <- scheduleEvent(sim, P(sim)$.plotInitialTime, "mpbClimateData", "plot", .last() - 1)
+           sim <- scheduleEvent(sim, P(sim)$.saveInitialTime, "mpbClimateData", "save", .last())
+         },
+         "switchLayer" = {
+           sim <- switchLayer(sim)
 
-      sim <- scheduleEvent(sim, time(sim), "mpbClimateData", "switchLayer", .first())
-    },
-    warning(paste("Undefined event type: '", current(sim)[1, "eventType", with = FALSE],
-                  "' in module '", current(sim)[1, "moduleName", with = FALSE], "'", sep = ""))
+           sim <- scheduleEvent(sim, time(sim), "mpbClimateData", "switchLayer", .first())
+         },
+         warning(paste("Undefined event type: '", current(sim)[1, "eventType", with = FALSE],
+                       "' in module '", current(sim)[1, "moduleName", with = FALSE], "'", sep = ""))
   )
   return(invisible(sim))
 }
@@ -267,7 +267,7 @@ importMaps <- function(sim) {
     destinationPath = inputPath(sim),
     fun = "qs::qread"
   ) ## TODO: do MPB_SLR call direcly:
-    ## LandR::BioSIM_getMPBSLR(dem, years = years, SLR = "R", climModel = "GCM4", rcp = "RCP45")
+  ## LandR::BioSIM_getMPBSLR(dem, years = years, SLR = "R", climModel = "GCM4", rcp = "RCP45")
 
   # Make coarser
 
@@ -321,14 +321,7 @@ importMaps <- function(sim) {
   aggDEM <- Cache(aggregateRasByDT, DEM, aggRTM, mean)
   splitInd <- ceiling(1:NROW(locations)/1000)
   locationsList <- split(locations, splitInd)
-  if (is(windModel, "try-error")) {
-    #library(googledrive);
-    #driveDL <- Cache(googledrive::drive_download, as_id("16xEX2HVDTT2voLC5doRDEZ-WzNq_69EP"), overwrite = TRUE)
-    #wind <- qs::qread(driveDL$local_path)
-    windCacheId <- workingWindCacheIds
-  } else {
-    windCacheId <- lapply(locationsList, function(x) NULL)
-  }
+  windCacheId <- workingWindCacheIds
 
   stWind <- system.time({
     ## 43 minutes with 3492 locations
@@ -336,14 +329,14 @@ importMaps <- function(sim) {
       wind <- Map(location = locationsList, cacheId = windCacheId,
                   MoreArgs = list(modelNames = windModel),
                   function(location, cacheId, modelNames) {
-        Cache(generateWeather, fromYr = 2009, toYr = 2030, location$Name,
-              latDeg = location$Y, longDeg = location$X,
-              elevM = aggDEM[][location$cellsWData],
-              modelNames = modelNames,
-              rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
-              cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
-              cacheId = cacheId)
-      })
+                    Cache(generateWeather, fromYr = 2009, toYr = 2030, location$Name,
+                          latDeg = location$Y, longDeg = location$X,
+                          elevM = aggDEM[][location$cellsWData],
+                          modelNames = modelNames,
+                          rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
+                          cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
+                          cacheId = cacheId)
+                  })
 
 
       # stWind <- system.time({
@@ -365,8 +358,8 @@ importMaps <- function(sim) {
       #                     cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
       #                     cacheId = windCacheId)
       #     })
-        })
     })
+  })
 
   curCacheIds <- gsub(".+\\((.+)\\..+\\).+$", "\\1", grep("Object", mess, value = TRUE))
   if (all(curCacheIds != workingWindCacheIds)) {
@@ -514,16 +507,16 @@ importMaps <- function(sim) {
   titl <- "Climate suitability maps"
   Cache(Plots, sim$climateSuitabilityMaps, title = titl, new = TRUE,
         filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
-                                    stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digCS)
+                          stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digCS)
   titl <- "Wind direction maps"
   Cache(Plots, sim$windDirStack, title = titl, new = TRUE,
         filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
-                                    stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digWindStk)
+                          stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digWindStk)
   titl <- "Wind speed maps"
   Cache(Plots, sim$windSpeedStack, title = titl, new = TRUE,
         filename = paste0(titl,", ",
-                                    start(sim), " to ", end(sim), "_",
-                                    stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digWindSpeedStk)
+                          start(sim), " to ", end(sim), "_",
+                          stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digWindSpeedStk)
 
   return(sim)
 }
