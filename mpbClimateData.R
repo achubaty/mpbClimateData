@@ -19,7 +19,7 @@ defineModule(sim, list(
   documentation = list("README.txt", "mpbClimateData.Rmd"),
   reqdPkgs = list("achubaty/amc@development", "BioSIM",
                   "grid",
-                  "PredictiveEcology/LandR@LCC2010 (>= 1.0.4)",
+                  "PredictiveEcology/LandR@development (>= 1.0.4)",
                   "magrittr", "maptools",
                   "PredictiveEcology/mpbutils (>= 0.1.2)",
                   "PredictiveEcology/pemisc@development",
