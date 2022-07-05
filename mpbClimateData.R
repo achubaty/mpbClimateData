@@ -455,7 +455,7 @@ importMaps <- function(sim) {
   # Visualize the small ones, including incorrect for posterity sake if they are in the future
   titl <- "Small climate suitability maps, pre-randomization"
   stNoColons <- gsub(":", "-", format(Sys.time()))
-  fn <- paste0(titl, ", ", start(sim), " to ", end(sim), "_",stNoColons )
+  fn <- paste0(titl, ", ", start(sim), " to ", end(sim), "_", stNoColons)
   Cache(Plots, sim$climateSuitabilityMaps, title = titl, new = TRUE,
         filename = fn, omitArgs = c("filename", "data"), .cacheExtra = digCS)
   # titl <- "Small wind direction maps, pre-randomization"
@@ -467,7 +467,6 @@ importMaps <- function(sim) {
   #       filename = paste0(titl,", ",
   #                         start(sim), " to ", end(sim), "_",
   #                         stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digWindSpeedStk)
-
 
   sim$windDirStack <- Cache(disaggregateToStack, windStk, sim$rasterToMatch, fact = fact,
                             .cacheExtra = digWindStk, omitArgs = c("x", "y", "fact"))
