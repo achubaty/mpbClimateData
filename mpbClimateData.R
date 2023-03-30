@@ -24,7 +24,9 @@ defineModule(sim, list(
                   "PredictiveEcology/mpbutils (>= 0.1.2)",
                   "PredictiveEcology/pemisc@development",
                   "PredictiveEcology/SpaDES.core@development (>= 1.0.8.9002)",
-                  "quickPlot", "raster", "PredictiveEcology/reproducible@development (>= 1.2.7.9002)", "sp", "spatialEco"),
+                  "quickPlot", "raster",
+                  "PredictiveEcology/reproducible@development (>= 1.2.7.9002)",
+                  "sp", "spatialEco"),
   parameters = rbind(
     defineParameter("climateScenario", "character", "RCP45", NA_character_, NA_character_,
                     "The climate scenario to use. One of RCP45 or RCP85."),
@@ -220,9 +222,9 @@ importMaps <- function(sim) {
   # CHECK MEMORY -- THIS WORKS BETTER WITH A LOT
   minMemNeeded <- 6e10
   for (i in 1:2) {
-    coToIgnore <- capture.output(
+    coToIgnore <- capture.output({
       ro <- rasterOptions()
-    )
+    })
     if (Par$.maxMemory >= minMemNeeded) {
       if (ro$maxmemory < Par$.maxMemory) {
         message("Increasing rasterOptions maxmemory to P(sim)$.maxMemory, which is ", Par$.maxMemory)
@@ -280,6 +282,7 @@ importMaps <- function(sim) {
   aggRTM <- raster::aggregate(aggRTM, fact = fact)
 
   windModel <- if (!grepl("spades", Sys.info()["nodename"])) {
+    browser() ## TODO: Error in J4R::connectToJava(extensionPath = path) : local Java server failed to start
     gml <- try(getModelList())
     if (is(gml, "try-error"))
       "ClimaticWind_Monthly"
@@ -287,7 +290,6 @@ importMaps <- function(sim) {
       whModel <- grep("ClimaticWind_Monthly", gml)
       gml[whModel] ## "ClimaticWind_Monthly"
     }
-
   } else {
     message("Not attempting BioSIM because using BorealCloud where it doesn't work")
     try(stop(), silent = TRUE)
@@ -322,7 +324,7 @@ importMaps <- function(sim) {
   splitInd <- ceiling(1:NROW(locations)/1000)
   locationsList <- split(locations, splitInd)
   windCacheId <- workingWindCacheIds
-
+browser() ## TODO: use CMIP6 climate models that match LandR-fS sims
   stWind <- system.time({
     ## 43 minutes with 3492 locations
     mess <- capture.output(type = "message", {
@@ -337,7 +339,6 @@ importMaps <- function(sim) {
                           cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
                           cacheId = cacheId)
                   })
-
 
       # stWind <- system.time({
       #   ## 43 minutes with 3492 locations
@@ -456,8 +457,12 @@ importMaps <- function(sim) {
   titl <- "Small climate suitability maps, pre-randomization"
   stNoColons <- gsub(":", "-", format(Sys.time()))
   fn <- paste0(titl, ", ", start(sim), " to ", end(sim), "_", stNoColons)
-  Cache(Plots, sim$climateSuitabilityMaps, title = titl, new = TRUE,
-        filename = fn, omitArgs = c("filename", "data"), .cacheExtra = digCS)
+
+  ## TODO: plotting raster fails - cannot coerce type 'S4' to vector of type 'double'; disable plotting for now
+  if (FALSE) {
+    Cache(Plots, sim$climateSuitabilityMaps, title = titl, new = TRUE,
+          filename = fn, omitArgs = c("filename", "data"), .cacheExtra = digCS)
+  }
   # titl <- "Small wind direction maps, pre-randomization"
   # Cache(Plots, sim$windDirStack, title = titl, new = TRUE,
   #       filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
