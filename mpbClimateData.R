@@ -297,7 +297,7 @@ importMaps <- function(sim) {
     message("Not attempting BioSIM because using BorealCloud where it doesn't work")
     try(stop(), silent = TRUE)
   }
-
+browser()
   # workingWindCacheId <- "2789d98628bd1552" # "5f588195a51652d2"
   workingWindCacheIds = c('28c428e741e18c6f', '7c98cfb38d1b0783', '75b95f32359cbe0c', 'ed8bff9a39b67a94')
   aggRTM <- Cache(aggregateRasByDT, sim$rasterToMatch, aggRTM, fn = mean)
@@ -338,7 +338,9 @@ browser() ## TODO: use CMIP6 climate models that match LandR-fS sims
                           latDeg = location$Y, longDeg = location$X,
                           elevM = aggDEM[][location$cellsWData],
                           modelNames = modelNames,
-                          rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
+                          rcp = "RCP85", climModel = "GCM4",
+                          ## TODO: add "usePrerun" parameter or similar
+                          useCloud = TRUE,
                           cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
                           cacheId = cacheId)
                   })
@@ -461,8 +463,7 @@ browser() ## TODO: use CMIP6 climate models that match LandR-fS sims
   stNoColons <- gsub(":", "-", format(Sys.time()))
   fn <- paste0(titl, ", ", start(sim), " to ", end(sim), "_", stNoColons)
 
-  ## TODO: plotting raster fails - cannot coerce type 'S4' to vector of type 'double'; disable plotting for now
-  if (FALSE) {
+  if (!any(is.na(P(sim)$.plots))) {
     Cache(Plots, sim$climateSuitabilityMaps, title = titl, new = TRUE,
           filename = fn, omitArgs = c("filename", "data"), .cacheExtra = digCS)
   }
@@ -509,21 +510,23 @@ browser() ## TODO: use CMIP6 climate models that match LandR-fS sims
   }
   message(crayon::green(mean(sim$climateSuitabilityMaps[[nlayers(sim$climateSuitabilityMaps)]][], na.rm = TRUE)))
 
-  # Visualize
-  digCS <- fastdigest::fastdigest(sim$climateSuitabilityMaps)
-  titl <- "Climate suitability maps"
-  Cache(Plots, sim$climateSuitabilityMaps, title = titl, new = TRUE,
-        filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
-                          stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digCS)
-  titl <- "Wind direction maps"
-  Cache(Plots, sim$windDirStack, title = titl, new = TRUE,
-        filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
-                          stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digWindStk)
-  titl <- "Wind speed maps"
-  Cache(Plots, sim$windSpeedStack, title = titl, new = TRUE,
-        filename = paste0(titl,", ",
-                          start(sim), " to ", end(sim), "_",
-                          stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digWindSpeedStk)
+  ## Visualize
+  if (!any(is.na(P(sim)$.plots))) {
+    digCS <- fastdigest::fastdigest(sim$climateSuitabilityMaps)
+    titl <- "Climate suitability maps"
+    Cache(Plots, sim$climateSuitabilityMaps, title = titl, new = TRUE,
+          filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
+                            stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digCS)
+    titl <- "Wind direction maps"
+    Cache(Plots, sim$windDirStack, title = titl, new = TRUE,
+          filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
+                            stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digWindStk)
+    titl <- "Wind speed maps"
+    Cache(Plots, sim$windSpeedStack, title = titl, new = TRUE,
+          filename = paste0(titl,", ",
+                            start(sim), " to ", end(sim), "_",
+                            stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digWindSpeedStk)
+  }
 
   return(sim)
 }
