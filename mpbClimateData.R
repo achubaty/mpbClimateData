@@ -2,6 +2,9 @@
 ## install.packages("https://sourceforge.net/projects/repiceasource/files/latest", repos = NULL,  type="source")
 ## install.packages("https://sourceforge.net/projects/biosimclient.mrnfforesttools.p/files/latest", repos = NULL,  type="source")
 
+## remotes::install_github("CWFC-CCFB/J4R@v1.1.8") ## v1.1.9 broken on ubuntu
+## remotes::install_github("RNCan/BioSimClient_R")
+
 defineModule(sim, list(
   name = "mpbClimateData",
   description = "Mountain pine beetle climate sensitivity, and wind layers",
@@ -17,7 +20,8 @@ defineModule(sim, list(
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("README.txt", "mpbClimateData.Rmd"),
-  reqdPkgs = list("achubaty/amc@development", "BioSIM",
+  reqdPkgs = list("achubaty/amc@development",
+                  "BioSIM", ## RNCan/BioSimClient_R; needs J4R v1.1.8 (v1.1.9 is broken on ubuntu)
                   "grid",
                   "PredictiveEcology/LandR@development (>= 1.0.4)",
                   "magrittr", "maptools",
@@ -282,7 +286,6 @@ importMaps <- function(sim) {
   aggRTM <- raster::aggregate(aggRTM, fact = fact)
 
   windModel <- if (!grepl("spades", Sys.info()["nodename"])) {
-    browser() ## TODO: Error in J4R::connectToJava(extensionPath = path) : local Java server failed to start
     gml <- try(getModelList())
     if (is(gml, "try-error"))
       "ClimaticWind_Monthly"
