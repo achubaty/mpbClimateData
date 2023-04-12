@@ -34,8 +34,21 @@ defineModule(sim, list(
   parameters = rbind(
     defineParameter("climateScenario", "character", "RCP45", NA_character_, NA_character_,
                     "The climate scenario to use. One of RCP45 or RCP85."),
+    defineParameter("cloudCacheFolderID", "character",
+                    "1225VXvtkHdkhLgQbl_CUd-6aVYOy9OD7", ## effective 2023-04-01
+                    #"175NUHoqppuXc2gIHZh5kznFi6tsigcOX", ## Eliot's old cache dir
+                    NA_character_, NA_character_,
+                    "Google Drive folder ID where cached BioSim windmaps can be retrieved."),
+    defineParameter("cloudCacheFileIDs", "character",
+                    # c("28c428e741e18c6f", "7c98cfb38d1b0783", "75b95f32359cbe0c", "ed8bff9a39b67a94"), ## ABSK (old)
+                    c("08cbf5d4fa5d122a", "8c6f0c4965370cf3", "b74daa01256a65a2", "5c958db389b8ff6f"), ## ABSK_9.2
+                    ## TODO: need better mechanism to deal with studyArea changes !!
+                    NA_character_, NA_character_,
+                    "BioSim windmap cache ids to retrieve from `cloudCacheFolderID`."),
     defineParameter("suitabilityIndex", "character", "R", NA_character_, NA_character_,
                     "The MPB climatic suitabilty index to use. One of 'S', 'L', 'R', or 'G'."),
+    defineParameter("usePrerun", "logical", TRUE, NA, NA,
+                    "Should cached or pre-run calls to BioSIM functions be used?"),
     defineParameter("windMonths", "integer", 7L, 1L, 12L,
                     paste("A vector of length 1 or more, indicating the month(s) of the year from which to extract wind data.",
                           "This should correspond to the months of dispersal")),
@@ -222,7 +235,6 @@ switchLayer <- function(sim) {
 
 ### helper functions
 importMaps <- function(sim) {
-
   # CHECK MEMORY -- THIS WORKS BETTER WITH A LOT
   minMemNeeded <- 6e10
   for (i in 1:2) {
@@ -269,7 +281,7 @@ importMaps <- function(sim) {
   #   pemisc::normalizeStack()
 
   sim$climateSuitabilityMaps <- prepInputs(
-    url = "https://drive.google.com/file/d/1NIqSv0O5DQbm0nf2YZhfOpKqqws8I-vV/view?usp=sharing",
+    url = "https://drive.google.com/file/d/1NIqSv0O5DQbm0nf2YZhfOpKqqws8I-vV/",
     destinationPath = inputPath(sim),
     fun = "qs::qread"
   ) ## TODO: do MPB_SLR call direcly:
@@ -297,16 +309,14 @@ importMaps <- function(sim) {
     message("Not attempting BioSIM because using BorealCloud where it doesn't work")
     try(stop(), silent = TRUE)
   }
-browser()
-  # workingWindCacheId <- "2789d98628bd1552" # "5f588195a51652d2"
-  workingWindCacheIds = c('28c428e741e18c6f', '7c98cfb38d1b0783', '75b95f32359cbe0c', 'ed8bff9a39b67a94')
+
   aggRTM <- Cache(aggregateRasByDT, sim$rasterToMatch, aggRTM, fn = mean)
 
   # Make Vector dataset
   cellsWData <- which(!is.na(aggRTM[]))
   cells <- xyFromCell(aggRTM, cell = cellsWData)
   sps <- sf::st_as_sf(SpatialPoints(cells, proj4string = crs(aggRTM)))
-  sps <- sf::st_transform(sps, crs = 4326)#"+init=epsg:3857")#  "4326")
+  sps <- sf::st_transform(sps, crs = 4326)
   locations <- data.table(Name = paste0("ID", 1:NROW(sps)), st_coordinates(sps),
                           cellsWData = cellsWData)
 
@@ -324,24 +334,30 @@ browser()
                studyArea = sim$studyArea,
                destinationPath = dPath)
   aggDEM <- Cache(aggregateRasByDT, DEM, aggRTM, mean)
-  splitInd <- ceiling(1:NROW(locations)/1000)
+  splitInd <- ceiling(1:NROW(locations) / 1000)
   locationsList <- split(locations, splitInd)
-  windCacheId <- workingWindCacheIds
-browser() ## TODO: use CMIP6 climate models that match LandR-fS sims
+  windCacheFolderID <-  P(sim)$cloudCacheFolderID
+  windCacheIds <- if (isTRUE(P(sim)$usePrerun)) {
+    P(sim)$cloudCacheFileIDs
+  } else {
+    lapply(locationsList, function(x) NULL)
+  }
+
+  ## TODO: use CMIP6 climate models that match LandR-fS sims
   stWind <- system.time({
     ## 43 minutes with 3492 locations
     mess <- capture.output(type = "message", {
-      wind <- Map(location = locationsList, cacheId = windCacheId,
+      wind <- Map(location = locationsList, cacheId = windCacheIds,
                   MoreArgs = list(modelNames = windModel),
                   function(location, cacheId, modelNames) {
+                    ## uses cloud cache to retrieve wind maps
                     Cache(generateWeather, fromYr = 2009, toYr = 2030, location$Name,
                           latDeg = location$Y, longDeg = location$X,
                           elevM = aggDEM[][location$cellsWData],
                           modelNames = modelNames,
                           rcp = "RCP85", climModel = "GCM4",
-                          ## TODO: add "usePrerun" parameter or similar
                           useCloud = TRUE,
-                          cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
+                          cloudFolderID = windCacheFolderID,
                           cacheId = cacheId)
                   })
 
@@ -352,7 +368,7 @@ browser() ## TODO: use CMIP6 climate models that match LandR-fS sims
       #     #               locations$Y, locations$X, aggDEM[][cellsWData],
       #     #               modelName = windModel,
       #     #               rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
-      #     #               cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
+      #     #               cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX",
       #     #               cacheId = windCacheId)
       #     wind <- by(locations, modelNames = windModel,
       #                   INDICES = ceiling(1:NROW(locations)/1000), function(location, modelNames) {
@@ -361,16 +377,16 @@ browser() ## TODO: use CMIP6 climate models that match LandR-fS sims
       #                     elevM = aggDEM[][location$cellsWData],
       #                     modelNames = modelNames,
       #                     rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
-      #                     cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX", # Eliot's Gdrive: Hosted/BioSIM/ folder
+      #                     cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX",
       #                     cacheId = windCacheId)
       #     })
     })
   })
 
   curCacheIds <- gsub(".+\\((.+)\\..+\\).+$", "\\1", grep("Object", mess, value = TRUE))
-  if (all(curCacheIds != workingWindCacheIds)) {
-    message(crayon::red("You need to update the windCacheId; it is now: ")    )
-    message(paste0("windCacheId = c('", paste(curCacheIds, collapse = "', '"), "')"))
+  if (all(curCacheIds != windCacheIds)) {
+    message(crayon::red("You need to update the cloudCacheFileIDs parameter; it is now: ")    )
+    message(paste0("cloudCacheFileIDs = c('", paste(curCacheIds, collapse = "', '"), "')"))
   }
 
   ignore <- lapply(mess, function(m) message(crayon::blue(gsub("^.+ mpbClm", "", m))))
@@ -396,8 +412,7 @@ browser() ## TODO: use CMIP6 climate models that match LandR-fS sims
 
   mnths <- months(as.POSIXct("2021-01-15") + dmonth(1) * 0:11)
   whMonths <- P(sim)$windMonths
-  message("Using only ", crayon::red(paste(mnths[whMonths], collapse = ", ")),
-          " wind directions")
+  message("Using only ", crayon::red(paste(mnths[whMonths], collapse = ", ")), " wind directions")
 
   if (any(colnames(wind) == "Month")) {
     wind <- wind[Month %in% whMonths]
@@ -441,7 +456,7 @@ browser() ## TODO: use CMIP6 climate models that match LandR-fS sims
   windDirWide <- dcast(wind, formula = KeyID ~ Year, value.var = "angleMean")
   windDirWide <- windDirWide[match(unique(wind$KeyID), KeyID )]
   colnms <- grep("[[:digit:]]{4,4}", colnames(windDirWide), value = TRUE)
-  windStk[cellsWData] <- as.matrix(windDirWide[, ..colnms])
+  windStk[cellsWData] <- as.matrix(windDirWide[, ..colnms]) ## WARNING : In x@data@values[i] <- value : number of items to replace is not a multiple of replacement length
   windStk <- raster::stack(windStk) # convert from Brick
   names(windStk) <- yrsChar
 
@@ -458,12 +473,12 @@ browser() ## TODO: use CMIP6 climate models that match LandR-fS sims
   #    all be at rasterToMatch -- which may not be what is needed for mpbRedTopSpread
   #    This will be re-aggregated there if needed.
 
-  # Visualize the small ones, including incorrect for posterity sake if they are in the future
-  titl <- "Small climate suitability maps, pre-randomization"
-  stNoColons <- gsub(":", "-", format(Sys.time()))
-  fn <- paste0(titl, ", ", start(sim), " to ", end(sim), "_", stNoColons)
-
   if (!any(is.na(P(sim)$.plots))) {
+    # Visualize the small ones, including incorrect for posterity sake if they are in the future
+    titl <- "Small climate suitability maps, pre-randomization"
+    stNoColons <- gsub(":", "-", format(Sys.time()))
+    fn <- paste0(titl, ", ", start(sim), " to ", end(sim), "_", stNoColons)
+
     Cache(Plots, sim$climateSuitabilityMaps, title = titl, new = TRUE,
           filename = fn, omitArgs = c("filename", "data"), .cacheExtra = digCS)
   }
@@ -484,8 +499,9 @@ browser() ## TODO: use CMIP6 climate models that match LandR-fS sims
                               .cacheExtra = digWindSpeedStk, omitArgs = c("x", "y", "fact"))
 
   if (!compareRaster(sim$windDirStack, sim$windSpeedStack, sim$rasterToMatch, stopiffalse = FALSE)) {
-    warning("wind raster is not same resolution as sim$rasterToMatch; please debug")
-    browser() ## TODO: remove
+    warning(paste("Wind raster is not same resolution as rasterToMatch.\n",
+                  "This may be due to retrieving cached wind maps for another studyArea.\n",
+                  "Please check that you have passed the correct cloudCacheFileIDs parameter values."))
   }
 
   if (end(sim) > 2021) {
