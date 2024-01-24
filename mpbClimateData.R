@@ -292,10 +292,10 @@ importMaps <- function(sim) {
   resClimate <- rep(1e4, 2)
   message("Using Climate resolution (wind, climate suitability) of ", paste(resClimate, collapse = " x "), " m")
 
-  aggRTM <- raster::raster(sim$rasterToMatch)
+  aggRTM <- terra::rast(sim$rasterToMatch)
   fact <- sqrt(prod(resClimate)/prod(res(sim$rasterToMatch)))
 
-  aggRTM <- raster::aggregate(aggRTM, fact = fact)
+  aggRTM <- terra::aggregate(aggRTM, fact = fact)
 
   windModel <- if (!grepl("spades", Sys.info()["nodename"])) {
     gml <- try(getModelList())
@@ -310,12 +310,14 @@ importMaps <- function(sim) {
     try(stop(), silent = TRUE)
   }
 
-  aggRTM <- Cache(aggregateRasByDT, sim$rasterToMatch, aggRTM, fn = mean)
+  aggRTM <- suppressWarningsSpecific(falseWarnings = "raster has no values",
+    Cache(aggregateRasByDT, sim$rasterToMatch, aggRTM, fn = mean)
+  )
 
   # Make Vector dataset
   cellsWData <- which(!is.na(aggRTM[]))
-  cells <- xyFromCell(aggRTM, cell = cellsWData)
-  sps <- sf::st_as_sf(SpatialPoints(cells, proj4string = crs(aggRTM)))
+  cells <- terra::xyFromCell(aggRTM, cell = cellsWData)
+  sps <- sf::st_as_sf(terra::vect(cells, crs = crs(aggRTM)))
   sps <- sf::st_transform(sps, crs = 4326)
   locations <- data.table(Name = paste0("ID", 1:NROW(sps)), st_coordinates(sps),
                           cellsWData = cellsWData)
@@ -554,9 +556,10 @@ aggregateRasByDT <- function(ras, newRas, fn = sum) {
     stop("The resolutions of the original raster and new raster are not integer multiples")
   disaggregateFactor <- unique(res(newRas)/res(ras))
   dt <- data.table(vals = ras[][whNonNA], ceiling(rc2 / disaggregateFactor))
+  setnames(dt, old = c("V1", "V2"), new = c("row", "col"))
   dt2 <- dt[, list(vals = fn(vals)), by = c("row", "col")]
   pixes <- cellFromRowCol(newRas, row = dt2$row, col = dt2$col)
-  newRasOut <- raster(newRas)
+  newRasOut <- terra::rast(newRas)
   newRasOut[pixes] <- dt2$vals
   names(newRasOut) <- names(ras)
   newRasOut
