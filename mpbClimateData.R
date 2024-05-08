@@ -310,8 +310,8 @@ importMaps <- function(sim) {
     try(stop(), silent = TRUE)
   }
 
-  aggRTM <- suppressWarningsSpecific(falseWarnings = "raster has no values",
-    Cache(aggregateRasByDT, sim$rasterToMatch, aggRTM, fn = mean)
+  aggRTM <- reproducible:::suppressWarningsSpecific(falseWarnings = "raster has no values",
+                                                    Cache(aggregateRasByDT, sim$rasterToMatch, aggRTM, fn = mean)
   )
 
   # Make Vector dataset
