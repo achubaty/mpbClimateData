@@ -284,7 +284,7 @@ importMaps <- function(sim) {
     url = "https://drive.google.com/file/d/1NIqSv0O5DQbm0nf2YZhfOpKqqws8I-vV/",
     destinationPath = inputPath(sim),
     fun = "qs::qread"
-  ) ## TODO: do MPB_SLR call direcly:
+  ) |> rast() ## TODO: do MPB_SLR call direcly:
   ## LandR::BioSIM_getMPBSLR(dem, years = years, SLR = "R", climModel = "GCM4", rcp = "RCP45")
 
   # Make coarser
@@ -298,7 +298,14 @@ importMaps <- function(sim) {
   aggRTM <- terra::aggregate(aggRTM, fact = fact)
 
   windModel <- if (!grepl("spades", Sys.info()["nodename"])) {
-    gml <- try(getModelList())
+    for (iii in 1:2) {
+      gml <- try(getModelList())
+      if (is(gml, "try-error"))
+        BioSIM::shutdownClient()
+      else
+        break
+    }
+
     if (is(gml, "try-error"))
       "ClimaticWind_Monthly"
     else {
@@ -408,7 +415,7 @@ importMaps <- function(sim) {
   wind <- rbindlist(lapply(wind, function(w) w[[1]])) # it is now nested inside a list
   setDT(wind)
   yrsChar <- paste0("X", unique(wind$Year))
-  windStk <- stack(lapply(yrsChar, function(x) aggRTM))
+  windStk <- terra::rast(lapply(yrsChar, function(x) aggRTM))
   windStk[] <- NA
   windSpeedStk <- windStk
 
@@ -426,7 +433,7 @@ importMaps <- function(sim) {
   windSpeedWide <- windSpeedWide[match(unique(wind$KeyID), KeyID )]
   colnms <- grep("[[:digit:]]{4,4}", colnames(windSpeedWide), value = TRUE)
   windSpeedStk[cellsWData] <- as.matrix(windSpeedWide[, ..colnms])
-  windSpeedStk <- raster::stack(windSpeedStk) # convert from Brick
+  # windSpeedStk <- raster::stack(windSpeedStk) # convert from Brick
   names(windSpeedStk) <- yrsChar
 
   # Wind Direction
@@ -459,7 +466,8 @@ importMaps <- function(sim) {
   windDirWide <- windDirWide[match(unique(wind$KeyID), KeyID )]
   colnms <- grep("[[:digit:]]{4,4}", colnames(windDirWide), value = TRUE)
   windStk[cellsWData] <- as.matrix(windDirWide[, ..colnms]) ## WARNING : In x@data@values[i] <- value : number of items to replace is not a multiple of replacement length
-  windStk <- raster::stack(windStk) # convert from Brick
+
+  # windStk <- raster::stack(windStk) # convert from Brick
   names(windStk) <- yrsChar
 
   # firstYearWind <- grep(start(sim), names(windStk))
@@ -468,9 +476,9 @@ importMaps <- function(sim) {
   #   windSpeedStk <- raster::dropLayer(windSpeedStk, seq_len(firstYearWind - 1))
   # }
 
-  digWindStk <- fastdigest::fastdigest(list(windStk, fact)) # digest the small one
-  digWindSpeedStk <- fastdigest::fastdigest(list(windSpeedStk, fact)) # digest the small one
-  digCS <- fastdigest::fastdigest(sim$climateSuitabilityMaps)
+  digWindStk <- .robustDigest(algo = "spookyhash", list(windStk, fact)) # digest the small one
+  digWindSpeedStk <- .robustDigest(algo = "spookyhash", list(windSpeedStk, fact)) # digest the small one
+  digCS <- .robustDigest(algo = "spookyhash", sim$climateSuitabilityMaps)
   # At the end of this module, the windDirStack, windSpeedStack and climateSuitability will
   #    all be at rasterToMatch -- which may not be what is needed for mpbRedTopSpread
   #    This will be re-aggregated there if needed.
@@ -500,7 +508,7 @@ importMaps <- function(sim) {
   sim$windSpeedStack <- Cache(disaggregateToStack, windSpeedStk, sim$rasterToMatch, fact = fact,
                               .cacheExtra = digWindSpeedStk, omitArgs = c("x", "y", "fact"))
 
-  if (!compareRaster(sim$windDirStack, sim$windSpeedStack, sim$rasterToMatch, stopiffalse = FALSE)) {
+  if (!compareGeom(sim$windDirStack, sim$windSpeedStack, sim$rasterToMatch)) {
     warning(paste("Wind raster is not same resolution as rasterToMatch.\n",
                   "This may be due to retrieving cached wind maps for another studyArea.\n",
                   "Please check that you have passed the correct cloudCacheFileIDs parameter values."))
@@ -522,19 +530,20 @@ importMaps <- function(sim) {
         randomizeSomeStackLayers(sim$windSpeedStack, sim$climateMapRandomize,
                                  endTime = end(sim) + 1)
     }
-    digWindStk <- fastdigest::fastdigest(list(sim$windDirStack, fact)) # need to update; now has new layers
-    digWindSpeedStk <- fastdigest::fastdigest(list(sim$windSpeedStack, fact)) # need to update; now has new layers
+    digWindStk <- .robustDigest(list(sim$windDirStack, fact)) # need to update; now has new layers
+    digWindSpeedStk <- .robustDigest(list(sim$windSpeedStack, fact)) # need to update; now has new layers
 
   }
-  message(crayon::green(mean(sim$climateSuitabilityMaps[[nlayers(sim$climateSuitabilityMaps)]][], na.rm = TRUE)))
+  message(crayon::green(mean(sim$climateSuitabilityMaps[[nlyr(sim$climateSuitabilityMaps)]][], na.rm = TRUE)))
 
   ## Visualize
   if (!any(is.na(P(sim)$.plots))) {
-    digCS <- fastdigest::fastdigest(sim$climateSuitabilityMaps)
     titl <- "Climate suitability maps"
-    Cache(Plots, sim$climateSuitabilityMaps, title = titl, new = TRUE,
+    #Cache(
+      Plots(sim$climateSuitabilityMaps, title = titl, new = TRUE,
           filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
-                            stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digCS)
+                            stNoColons))#, omitArgs = c("filename", "data")
+     # , .cacheExtra = digCS)
     titl <- "Wind direction maps"
     Cache(Plots, sim$windDirStack, title = titl, new = TRUE,
           filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
@@ -602,7 +611,19 @@ randomizeSomeStackLayers <- function(stk, swaps, endTime) {
     aa <- stk[[srcYears]]
     bb <- stk[[newYears]]
     names(bb) <- rmYears
-    stk <- addLayer(aa, bb)
+    stk <- c(aa, bb) # in terra, these are 2 different objects, but they have the same .tif
+                     #   when we put them together, the filename doesn't contain the information
+                     #   needed to keep the aa and bb separate, so when wrapSpatRaster is run,
+    #   it essentially does c(stk, stk); so, need to rebuild with 1 file backend
+    if (any(nzchar(Filenames(stk)))) {
+      tf <- file.path(terraOptions(print = FALSE)[["tempdir"]], basename(tempfile(fileext = ".tif")))
+      stk1 <- writeRaster(stk, filename = tf)
+      fn <- unique(Filenames(stk))
+      rm(stk)
+      unlink(fn)
+      out <- file.copy(Filenames(stk1), fn)
+      stk <- terra::rast(fn)
+    }
   }
   return(stk)
 }
@@ -613,7 +634,8 @@ yrNamesPlus1 <- function(yrNames) {
 }
 
 disaggregateToStack <- function(x, y, fact) {
-  x <- disaggregate(x, fact)
-  rr <- crop(x, y)
-  raster::stack(rr)
+  x <- terra::disagg(x, fact)
+  rr <- terra::crop(x, y)
+  # raster::stack(rr)
+  rr
 }
