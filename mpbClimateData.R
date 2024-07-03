@@ -566,7 +566,6 @@ importMaps <- function(sim) {
                   "Please check that you have passed the correct cloudCacheFileIDs parameter values."))
   }
 
-  browser()
   if (end(sim) > nowYear()) {
     if (!is.null(sim$climateMapRandomize)) {
       if (isTRUE(sim$climateMapRandomize)) {
@@ -608,7 +607,6 @@ importMaps <- function(sim) {
                             stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digWindSpeedStk)
   }
 
-  browser()
   return(sim)
 }
 
