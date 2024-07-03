@@ -22,15 +22,15 @@ defineModule(sim, list(
   documentation = list("README.txt", "mpbClimateData.Rmd"),
   reqdPkgs = list("achubaty/amc@development",
                   "BioSIM", ## RNCan/BioSimClient_R; needs J4R v1.1.8 (v1.1.9 is broken on ubuntu)
-                  "grid",
+                  "grid", "CircStats",
                   "PredictiveEcology/LandR@development (>= 1.0.4)",
                   "magrittr", "maptools",
                   "PredictiveEcology/mpbutils (>= 0.1.2)",
                   "PredictiveEcology/pemisc@development",
                   "PredictiveEcology/SpaDES.core@development (>= 1.0.8.9002)",
-                  "quickPlot", "raster",
+                  "quickPlot", "raster", "terra",
                   "PredictiveEcology/reproducible@development (>= 1.2.7.9002)",
-                  "sp", "spatialEco"),
+                  "sp", "sf", "data.table", "spatialEco"),
   parameters = rbind(
     defineParameter("climateScenario", "character", "RCP45", NA_character_, NA_character_,
                     "The climate scenario to use. One of RCP45 or RCP85."),
@@ -295,6 +295,7 @@ importMaps <- function(sim) {
   aggRTM <- terra::rast(sim$rasterToMatch)
   fact <- sqrt(prod(resClimate)/prod(res(sim$rasterToMatch)))
 
+  fact <- fact * 3
   aggRTM <- terra::aggregate(aggRTM, fact = fact)
 
   windModel <- if (!grepl("spades", Sys.info()["nodename"])) {
@@ -318,7 +319,8 @@ importMaps <- function(sim) {
   }
 
   aggRTM <- reproducible:::suppressWarningsSpecific(falseWarnings = "raster has no values",
-                                                    Cache(aggregateRasByDT, sim$rasterToMatch, aggRTM, fn = mean)
+                                                    Cache(aggregateRasByDT,
+                                                          sim$rasterToMatch, aggRTM, fn = mean)
   )
 
   # Make Vector dataset
@@ -343,6 +345,10 @@ importMaps <- function(sim) {
                studyArea = sim$studyArea,
                destinationPath = dPath)
   aggDEM <- Cache(aggregateRasByDT, DEM, aggRTM, mean)
+
+  locations$elevation <- aggDEM[][locations$cellsWData]
+  # aggDEM[is.na(aggDEM[])] <- -9999
+
   splitInd <- ceiling(1:NROW(locations) / 1000)
   locationsList <- split(locations, splitInd)
   windCacheFolderID <-  P(sim)$cloudCacheFolderID
@@ -353,67 +359,107 @@ importMaps <- function(sim) {
   }
 
   ## TODO: use CMIP6 climate models that match LandR-fS sims
+
+  modelsThatNeedGT1Yr <- c("BudBurst", "Climate_Mosture_Index_Annual", "EmeraldAshBorerColdHardiness_Annual",
+                           "Gypsy_Moth_Seasonality", "HemlockWoollyAdelgid_Annual", "HemlockWoollyAdelgid_Daily",
+                           "MPB_Cold_Tolerance_Annual", "MPB_Cold_Tolerance_Daily", "MPB_SLR",
+                           "PlantHardinessCanada", "PlantHardinessUSA", "Spruce_Budworm_Biology_Annual",
+                           "SpruceBeetle", "Standardised_Precipitation_Evapotranspiration_Index"
+  )
+
+  climateSuitabilityModel <- "MPB_SLR" # "TminTairTmax_Daily"
+  modelNames <- c(windModel, climateSuitabilityModel)
+  # This allows evaluation of intermediates if it crashes/manually stopped in the middle
+  # intermediateInner2 <- intermediateInner <- list()
   stWind <- system.time({
     ## 43 minutes with 3492 locations
-    mess <- capture.output(type = "message", {
-      wind <- Map(location = locationsList, cacheId = windCacheIds,
-                  MoreArgs = list(modelNames = windModel),
-                  function(location, cacheId, modelNames) {
-                    ## uses cloud cache to retrieve wind maps
-                    Cache(generateWeather, fromYr = 2009, toYr = 2030, location$Name,
-                          latDeg = location$Y, longDeg = location$X,
-                          elevM = aggDEM[][location$cellsWData],
-                          modelNames = modelNames,
-                          rcp = "RCP85", climModel = "GCM4",
-                          useCloud = TRUE,
-                          cloudFolderID = windCacheFolderID,
-                          cacheId = cacheId)
-                  })
+    # mess <- capture.output(type = "message", {
+    BioSim <- Map(modelName = c(modelNames),#, windModel),
+                  function(modelName) {
+      outer <- Map(location = locationsList, cacheId = windCacheIds,
+                   function(location, cacheId) {
+                     ## uses cloud cache to retrieve wind maps
+                     strtYrs <- start(sim)
+                     endYrs <- end(sim)
+                     if (modelName %in% modelsThatNeedGT1Yr) {
+                       nyrs <- 1
+                       if (!isTRUE(all.equal(strtYrs, endYrs))) {
+                         strtYrs <- strtYrs - nyrs
+                       }
+                       strtYrs <- seq(strtYrs, endYrs - nyrs)
+                       endYrs <- seq(strtYrs[1] + nyrs, endYrs)
+                     }
+                       inner <- Map(strtYr = strtYrs, endYr = endYrs, function(strtYr, endYr) {
+                         message(modelName, ": yrs: ", strtYr, "-", endYr)
+                         intermediateInner <<-
+                           Cache(generateWeather, fromYr = strtYr, toYr = endYr,
+                               location$Name,
+                               latDeg = location$Y, longDeg = location$X,
+                               elevM = location$elevation,
+                               modelNames = modelName,
+                               rcp = "RCP85", climModel = "GCM4",
+                               #useCloud = TRUE,
+                               #cloudFolderID = windCacheFolderID,
+                               cacheId = cacheId)
+                       })
 
-      # stWind <- system.time({
-      #   ## 43 minutes with 3492 locations
-      #   mess <- capture.output(type = "message", {
-      #     # wind <- Cache(getModelOutput, 2009, 2030, locations$Name,
-      #     #               locations$Y, locations$X, aggDEM[][cellsWData],
-      #     #               modelName = windModel,
-      #     #               rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
-      #     #               cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX",
-      #     #               cacheId = windCacheId)
-      #     wind <- by(locations, modelNames = windModel,
-      #                   INDICES = ceiling(1:NROW(locations)/1000), function(location, modelNames) {
-      #       Cache(generateWeather, fromYr = 2009, toYr = 2030, location$Name,
-      #                     latDeg = location$Y, longDeg = location$X,
-      #                     elevM = aggDEM[][location$cellsWData],
-      #                     modelNames = modelNames,
-      #                     rcp = "RCP85", climModel = "GCM4", useCloud = TRUE,
-      #                     cloudFolderID = "175NUHoqppuXc2gIHZh5kznFi6tsigcOX",
-      #                     cacheId = windCacheId)
-      #     })
+                     intermediateInner2 <<- inner2 <-
+                       rbindlist(lapply(inner, function(x) x[[1]])) # only 1 modelName used here
+
+                   })
+      out <- rbindlist(outer)
     })
   })
 
-  curCacheIds <- gsub(".+\\((.+)\\..+\\).+$", "\\1", grep("Object", mess, value = TRUE))
-  if (all(curCacheIds != windCacheIds)) {
-    message(crayon::red("You need to update the cloudCacheFileIDs parameter; it is now: ")    )
-    message(paste0("cloudCacheFileIDs = c('", paste(curCacheIds, collapse = "', '"), "')"))
-  }
-
-  ignore <- lapply(mess, function(m) message(crayon::blue(gsub("^.+ mpbClm", "", m))))
-  # if (is.null(windCacheId)) {
-  #   windAttr <- attr(wind, "tags")
-  #   curCacheId <- if (!is.null(windAttr)) {
-  #     gsub("cacheId:", "", windAttr)
-  #   } else {
-  #     gsub("^.+\\((.+)\\..+\\)", "\\1", grep("Object to retrieve", mess, value = TRUE))
-  #   }
-  #   if (curCacheId != workingWindCacheId) {
-  #     message(crayon::red("You need to update the windCacheId; it is now ", curCacheId)    )
-  #   }
+  # curCacheIds <- vapply(BioSim, function(x) gsub("cacheId:", "", attr(x, "tags")), FUN.VALUE = character(1))
+  # if (all(curCacheIds != windCacheIds)) {
+  #   message(crayon::red("You need to update the cloudCacheFileIDs parameter; it is now: ")    )
+  #   message(paste0("cloudCacheFileIDs = c('", paste(curCacheIds, collapse = "', '"), "')"))
   # }
 
+  if (FALSE) {
+
+    par(mfrow = c(1,1))
+    year <- 2015#:2011#2030
+    m <- matrix(intermediateInner$MPB_SLR$CT_Survival, ncol = length(year), byrow = F)
+    r <- lapply(seq_along(year), function(x) {
+      r <- terra::rast(aggRTM)
+      r[cellsWData] <- m[, x]
+      r
+    })
+    r <- terra::rast(r)
+    # terra::plot(sim$climateSuitabilityMaps[[paste0("X", year)]])
+    terra::plot(r)
+
+    par(mfrow = c(1,2))
+    year <- 2020:2020
+    m <- matrix(BioSim[[climateSuitabilityModel]]$CT_Survival[BioSim[[climateSuitabilityModel]]$Year %in% year],
+                ncol = length(year), byrow = F)
+    r <- lapply(seq_along(year), function(x) {
+      r <- terra::rast(aggRTM)
+      r[cellsWData] <- m[, x]
+      r
+      })
+    r <- terra::rast(r)
+    names(r) <- paste0("X", year)
+    # terra::plot(sim$climateSuitabilityMaps[[paste0("X", year)]])
+    terra::plot(r)
+  }
+
+
   # Make RasterStack
-  wind <- rbindlist(lapply(wind, function(w) w[[1]])) # it is now nested inside a list
-  setDT(wind)
+  climateSuitabilityMaps <- BioSim[[climateSuitabilityModel]]
+  # climateSuitabilityMaps <- rbindlist(climateSuitabilityMaps)
+  yrsChar <- paste0("X", unique(climateSuitabilityMaps$Year))
+  climateSuitabilityMaps <- terra::rast(lapply(yrsChar, function(x) aggRTM))
+  names(climateSuitabilityMaps) <- yrsChar
+  # climateSuitabilityMaps[] <-
+  m <- matrix(BioSim[[climateSuitabilityModel]]$Geo_prod_pL2b_pC, ncol = length(names(climateSuitabilityMaps)))
+
+  wind <- BioSim[[windModel]]
+  # wind <- rbindlist(wind)
+  # wind <- rbindlist(lapply(wind, function(w) w[[1]])) # it is now nested inside a list
+  # setDT(wind)
   yrsChar <- paste0("X", unique(wind$Year))
   windStk <- terra::rast(lapply(yrsChar, function(x) aggRTM))
   windStk[] <- NA
@@ -508,6 +554,7 @@ importMaps <- function(sim) {
   sim$windSpeedStack <- Cache(disaggregateToStack, windSpeedStk, sim$rasterToMatch, fact = fact,
                               .cacheExtra = digWindSpeedStk, omitArgs = c("x", "y", "fact"))
 
+  browser()
   if (!compareGeom(sim$windDirStack, sim$windSpeedStack, sim$rasterToMatch)) {
     warning(paste("Wind raster is not same resolution as rasterToMatch.\n",
                   "This may be due to retrieving cached wind maps for another studyArea.\n",
