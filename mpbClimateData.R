@@ -219,7 +219,8 @@ switchLayer <- function(sim) {
   }
 
   if (!suppliedElsewhere("climateMapRandomize", sim)) {
-    if (end(sim) > 2021)
+
+    if (end(sim) > nowYear())
       sim$climateMapRandomize <- TRUE
 
   }
@@ -280,11 +281,11 @@ importMaps <- function(sim) {
   #   setNames(layerNames) %>%
   #   pemisc::normalizeStack()
 
-  sim$climateSuitabilityMaps <- prepInputs(
-    url = "https://drive.google.com/file/d/1NIqSv0O5DQbm0nf2YZhfOpKqqws8I-vV/",
-    destinationPath = inputPath(sim),
-    fun = "qs::qread"
-  ) |> rast() ## TODO: do MPB_SLR call direcly:
+  # sim$climateSuitabilityMaps <- prepInputs(
+  #   url = "https://drive.google.com/file/d/1NIqSv0O5DQbm0nf2YZhfOpKqqws8I-vV/",
+  #   destinationPath = inputPath(sim),
+  #   fun = "qs::qread"
+  # ) |> rast() ## TODO: do MPB_SLR call direcly:
   ## LandR::BioSIM_getMPBSLR(dem, years = years, SLR = "R", climModel = "GCM4", rcp = "RCP45")
 
   # Make coarser
@@ -446,7 +447,6 @@ importMaps <- function(sim) {
     terra::plot(r)
   }
 
-
   # Make RasterStack
   climateSuitabilityMaps <- BioSim[[climateSuitabilityModel]]
   # climateSuitabilityMaps <- rbindlist(climateSuitabilityMaps)
@@ -454,7 +454,9 @@ importMaps <- function(sim) {
   climateSuitabilityMaps <- terra::rast(lapply(yrsChar, function(x) aggRTM))
   names(climateSuitabilityMaps) <- yrsChar
   # climateSuitabilityMaps[] <-
-  m <- matrix(BioSim[[climateSuitabilityModel]]$Geo_prod_pL2b_pC, ncol = length(names(climateSuitabilityMaps)))
+  m <- matrix(BioSim[[climateSuitabilityModel]]$CT_Survival,
+              ncol = length(names(climateSuitabilityMaps)))
+  climateSuitabilityMaps[cellsWData] <- m
 
   wind <- BioSim[[windModel]]
   # wind <- rbindlist(wind)
@@ -524,7 +526,7 @@ importMaps <- function(sim) {
 
   digWindStk <- .robustDigest(algo = "spookyhash", list(windStk, fact)) # digest the small one
   digWindSpeedStk <- .robustDigest(algo = "spookyhash", list(windSpeedStk, fact)) # digest the small one
-  digCS <- .robustDigest(algo = "spookyhash", sim$climateSuitabilityMaps)
+  digCS <- .robustDigest(algo = "spookyhash", climateSuitabilityMaps)
   # At the end of this module, the windDirStack, windSpeedStack and climateSuitability will
   #    all be at rasterToMatch -- which may not be what is needed for mpbRedTopSpread
   #    This will be re-aggregated there if needed.
@@ -535,7 +537,7 @@ importMaps <- function(sim) {
     stNoColons <- gsub(":", "-", format(Sys.time()))
     fn <- paste0(titl, ", ", start(sim), " to ", end(sim), "_", stNoColons)
 
-    Cache(Plots, sim$climateSuitabilityMaps, title = titl, new = TRUE,
+    Cache(Plots, climateSuitabilityMaps, title = titl, new = TRUE,
           filename = fn, omitArgs = c("filename", "data"), .cacheExtra = digCS)
   }
   # titl <- "Small wind direction maps, pre-randomization"
@@ -554,42 +556,46 @@ importMaps <- function(sim) {
   sim$windSpeedStack <- Cache(disaggregateToStack, windSpeedStk, sim$rasterToMatch, fact = fact,
                               .cacheExtra = digWindSpeedStk, omitArgs = c("x", "y", "fact"))
 
-  browser()
-  if (!compareGeom(sim$windDirStack, sim$windSpeedStack, sim$rasterToMatch)) {
+  sim$climateSuitabilityMaps <-
+    Cache(disaggregateToStack, climateSuitabilityMaps, sim$rasterToMatch, fact = fact,
+                              .cacheExtra = digCS, omitArgs = c("x", "y", "fact"))
+
+  if (!compareGeom(sim$windDirStack, sim$windSpeedStack, sim$rasterToMatch, sim$climateSuitabilityMaps)) {
     warning(paste("Wind raster is not same resolution as rasterToMatch.\n",
                   "This may be due to retrieving cached wind maps for another studyArea.\n",
                   "Please check that you have passed the correct cloudCacheFileIDs parameter values."))
   }
 
-  if (end(sim) > 2021) {
+  browser()
+  if (end(sim) > nowYear()) {
     if (!is.null(sim$climateMapRandomize)) {
       if (isTRUE(sim$climateMapRandomize)) {
-        sim$climateMapRandomize <- list(srcYears = 2010:2021, rmYears = 2022:(end(sim) + 1))
+        sim$climateMapRandomize <- list(srcYears = start(sim):nowYear(), rmYears = (nowYear() + 1):(end(sim) + 1))
 
       }
       sim$climateSuitabilityMaps <-
         randomizeSomeStackLayers(sim$climateSuitabilityMaps, sim$climateMapRandomize,
-                                 endTime = end(sim) + 1)
+                                 endTime = end(sim) + 1, inputPath = inputPath(sim))
       sim$windDirStack <-
         randomizeSomeStackLayers(sim$windDirStack, sim$climateMapRandomize,
-                                 endTime = end(sim) + 1)
+                                 endTime = end(sim) + 1, inputPath = inputPath(sim))
       sim$windSpeedStack <-
         randomizeSomeStackLayers(sim$windSpeedStack, sim$climateMapRandomize,
-                                 endTime = end(sim) + 1)
+                                 endTime = end(sim) + 1, inputPath = inputPath(sim))
     }
     digWindStk <- .robustDigest(list(sim$windDirStack, fact)) # need to update; now has new layers
     digWindSpeedStk <- .robustDigest(list(sim$windSpeedStack, fact)) # need to update; now has new layers
-
+    digCS <- .robustDigest(list(sim$climateSuitabilityMaps, fact)) # need to update; now has new layers
   }
   message(crayon::green(mean(sim$climateSuitabilityMaps[[nlyr(sim$climateSuitabilityMaps)]][], na.rm = TRUE)))
 
   ## Visualize
   if (!any(is.na(P(sim)$.plots))) {
     titl <- "Climate suitability maps"
-    #Cache(
+    Cache(
       Plots(sim$climateSuitabilityMaps, title = titl, new = TRUE,
           filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
-                            stNoColons))#, omitArgs = c("filename", "data")
+                            stNoColons), omitArgs = c("filename", "data")), .cacheExtra = digCS)
      # , .cacheExtra = digCS)
     titl <- "Wind direction maps"
     Cache(Plots, sim$windDirStack, title = titl, new = TRUE,
@@ -602,6 +608,7 @@ importMaps <- function(sim) {
                             stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digWindSpeedStk)
   }
 
+  browser()
   return(sim)
 }
 
@@ -639,7 +646,7 @@ sumAngles <- function(angles, magnitude) {
   deg(atan2(x, y)) %% 360
 }
 
-randomizeSomeStackLayers <- function(stk, swaps, endTime) {
+randomizeSomeStackLayers <- function(stk, swaps, endTime, inputPath) {
   rmYears <- paste0("X", swaps$rmYears)
   if (endTime >= min(swaps$rmYears)) {
     layerNames <- as.numeric(gsub("X", "", layerNames(stk)))
@@ -653,7 +660,8 @@ randomizeSomeStackLayers <- function(stk, swaps, endTime) {
       rmYears <- rmYears[seq(numNeedYears)]
     }
 
-    message("randomizing ", deparse(substitute(stk)), "; removing: ", paste(rmYears, collapse = ", "))
+    mapName <- deparse(substitute(stk))
+    message("randomizing ", mapName, "; removing: ", paste(rmYears, collapse = ", "))
     newYears <- sample(srcYears, size = numNeedYears, replace = TRUE)
     aa <- stk[[srcYears]]
     bb <- stk[[newYears]]
@@ -686,3 +694,6 @@ disaggregateToStack <- function(x, y, fact) {
   # raster::stack(rr)
   rr
 }
+
+nowYear <- function()
+  as.numeric(format(Sys.Date(), "%Y")) - 1
