@@ -24,7 +24,7 @@ defineModule(sim, list(
                   "BioSIM", ## RNCan/BioSimClient_R; needs J4R v1.1.8 (v1.1.9 is broken on ubuntu)
                   "grid", "CircStats",
                   "PredictiveEcology/LandR@development (>= 1.0.4)",
-                  "magrittr", "maptools",
+                  "magrittr", # "maptools",
                   "PredictiveEcology/mpbutils (>= 0.1.2)",
                   "PredictiveEcology/pemisc@development",
                   "PredictiveEcology/SpaDES.core@development (>= 1.0.8.9002)",
