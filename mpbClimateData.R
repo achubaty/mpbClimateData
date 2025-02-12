@@ -372,7 +372,7 @@ importMaps <- function(sim) {
   modelNames <- c(windModel, climateSuitabilityModel)
   # This allows evaluation of intermediates if it crashes/manually stopped in the middle
   # intermediateInner2 <- intermediateInner <- list()
-  stWind <- system.time({
+  # stWind <- system.time({
     ## 43 minutes with 3492 locations
     # mess <- capture.output(type = "message", {
     BioSim <- Map(modelName = c(modelNames),#, windModel),
@@ -410,7 +410,7 @@ importMaps <- function(sim) {
                    })
       out <- rbindlist(outer)
     })
-  })
+  # })
 
   # curCacheIds <- vapply(BioSim, function(x) gsub("cacheId:", "", attr(x, "tags")), FUN.VALUE = character(1))
   # if (all(curCacheIds != windCacheIds)) {
