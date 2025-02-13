@@ -390,10 +390,10 @@ importMaps <- function(sim) {
                        strtYrs <- seq(strtYrs, endYrs - nyrs)
                        endYrs <- seq(strtYrs[1] + nyrs, endYrs)
                      }
-                       inner <- Map(strtYr = strtYrs, endYr = endYrs, function(strtYr, endYr) {
-                         message(modelName, ": yrs: ", strtYr, "-", endYr)
-                         intermediateInner <<-
-                           Cache(generateWeather, fromYr = strtYr, toYr = endYr,
+                     inner <- Map(strtYr = strtYrs, endYr = endYrs, function(strtYr, endYr) {
+                       message(modelName, ": yrs: ", strtYr, "-", endYr)
+                       intermediateInner <<-
+                         Cache(generateWeather, fromYr = strtYr, toYr = endYr,
                                location$Name,
                                latDeg = location$Y, longDeg = location$X,
                                elevM = location$elevation,
@@ -402,7 +402,7 @@ importMaps <- function(sim) {
                                #useCloud = TRUE,
                                #cloudFolderID = windCacheFolderID,
                                cacheId = cacheId)
-                       })
+                     })
 
                      intermediateInner2 <<- inner2 <-
                        rbindlist(lapply(inner, function(x) x[[1]])) # only 1 modelName used here
@@ -566,25 +566,33 @@ importMaps <- function(sim) {
                   "Please check that you have passed the correct cloudCacheFileIDs parameter values."))
   }
 
+  nams <- outputObjects(sim)$objectName
+
   if (end(sim) > nowYear()) {
     if (!is.null(sim$climateMapRandomize)) {
       if (isTRUE(sim$climateMapRandomize)) {
         sim$climateMapRandomize <- list(srcYears = start(sim):nowYear(), rmYears = (nowYear() + 1):(end(sim) + 1))
 
       }
-      sim$climateSuitabilityMaps <-
-        randomizeSomeStackLayers(sim$climateSuitabilityMaps, sim$climateMapRandomize,
-                                 endTime = end(sim) + 1, inputPath = inputPath(sim))
-      sim$windDirStack <-
-        randomizeSomeStackLayers(sim$windDirStack, sim$climateMapRandomize,
-                                 endTime = end(sim) + 1, inputPath = inputPath(sim))
-      sim$windSpeedStack <-
-        randomizeSomeStackLayers(sim$windSpeedStack, sim$climateMapRandomize,
-                                 endTime = end(sim) + 1, inputPath = inputPath(sim))
+      for (nam in nams) {
+        sim[[nam]] <-
+          randomizeSomeStackLayers(sim[[nam]], sim$climateMapRandomize,
+                                   endTime = end(sim) + 1, inputPath = inputPath(sim))
+        assign(digNameGenerator(nam), value = .robustDigest(list(sim[[nam]], fact)))
+      }
+      # sim$climateSuitabilityMaps <-
+      #   randomizeSomeStackLayers(sim$climateSuitabilityMaps, sim$climateMapRandomize,
+      #                            endTime = end(sim) + 1, inputPath = inputPath(sim))
+      # sim$windDirStack <-
+      #   randomizeSomeStackLayers(sim$windDirStack, sim$climateMapRandomize,
+      #                            endTime = end(sim) + 1, inputPath = inputPath(sim))
+      # sim$windSpeedStack <-
+      #   randomizeSomeStackLayers(sim$windSpeedStack, sim$climateMapRandomize,
+      #                            endTime = end(sim) + 1, inputPath = inputPath(sim))
     }
-    digWindStk <- .robustDigest(list(sim$windDirStack, fact)) # need to update; now has new layers
-    digWindSpeedStk <- .robustDigest(list(sim$windSpeedStack, fact)) # need to update; now has new layers
-    digCS <- .robustDigest(list(sim$climateSuitabilityMaps, fact)) # need to update; now has new layers
+    # digWindStk <- .robustDigest(list(sim$windDirStack, fact)) # need to update; now has new layers
+    # digWindSpeedStk <- .robustDigest(list(sim$windSpeedStack, fact)) # need to update; now has new layers
+    # digCS <- .robustDigest(list(sim$climateSuitabilityMaps, fact)) # need to update; now has new layers
   }
   message(crayon::green(mean(sim$climateSuitabilityMaps[[nlyr(sim$climateSuitabilityMaps)]][], na.rm = TRUE)))
 
@@ -593,21 +601,49 @@ importMaps <- function(sim) {
     titl <- "Climate suitability maps"
     Cache(
       Plots(sim$climateSuitabilityMaps, title = titl, new = TRUE,
-          filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
-                            stNoColons), omitArgs = c("filename", "data")), .cacheExtra = digCS)
+          filename = filenameGenerator(titl, start(sim), end(sim), stNoColons),
+          omitArgs = c("filename", "data")), .cacheExtra = digCS)
      # , .cacheExtra = digCS)
     titl <- "Wind direction maps"
     Cache(Plots, sim$windDirStack, title = titl, new = TRUE,
-          filename = paste0(titl, ", ", start(sim), " to ", end(sim), "_",
-                            stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digWindStk)
+          filename = filenameGenerator(titl, start(sim), end(sim), stNoColons),
+          omitArgs = c("filename", "data"), .cacheExtra = digWindStk)
     titl <- "Wind speed maps"
     Cache(Plots, sim$windSpeedStack, title = titl, new = TRUE,
-          filename = paste0(titl,", ",
-                            start(sim), " to ", end(sim), "_",
-                            stNoColons), omitArgs = c("filename", "data"), .cacheExtra = digWindSpeedStk)
+          filename = filenameGenerator(titl, start(sim), end(sim), stNoColons),
+          omitArgs = c("filename", "data"), .cacheExtra = digWindSpeedStk)
   }
 
+  for (nam in nams) {
+    out <-
+      writeTo(sim[[nam]],
+              writeTo = paste0(figurePath(sim), filenameGenerator(nam, start(sim), end(sim)), ".tif")) |>
+      Cache(omitArgs = c("from"), .cacheExtra = get(digNameGenerator(nam), inherits = FALSE))
+    sim[[nam]] <- out
+
+  }
+
+  # out <-
+  #   writeTo(sim$windDirStack,
+  #           writeTo = paste0(figurePath(sim), filenameGenerator("windDirStack", start(sim), end(sim)), ".tif")) |>
+  #   Cache(omitArgs = c("from"), .cacheExtra = digCS)
+  # sim$windDirStack <- out
+  #
+  # out <-
+  #   writeTo(sim$windSpeedStack,
+  #           writeTo = paste0(figurePath(sim), filenameGenerator("windSpeedStack", start(sim), end(sim)), ".tif")) |>
+  #   Cache(omitArgs = c("from"), .cacheExtra = digCS)
+  # sim$windSpeedStack <- out
+
   return(sim)
+}
+
+filenameGenerator <- function(titl, start, end, stNoColons = "", sep = "_") {
+  paste0(paste(titl, start(sim), end(sim), sep = sep), stNoColons)
+}
+
+digNameGenerator <- function(nam) {
+  paste0("dig", nam)
 }
 
 aggregateRasByDT <- function(ras, newRas, fn = sum) {
