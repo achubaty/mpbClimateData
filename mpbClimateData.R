@@ -391,12 +391,13 @@ GenerateClimate <- function(sim) {
 
   ## write to disk; they are enormous
   for (nam in nams) {
-    out <-
-      writeTo(sim[[nam]],
-              writeTo = paste0(figurePath(sim),
-                               filenameGenerator(nam, start(sim), end(sim), stNoColons = stNoColons),
-                               ".tif")) |>
-      Cache(omitArgs = c("from", "writeTo"), .cacheExtra = digs[[nam]])
+    out <- writeTo(
+      sim[[nam]],
+      writeTo = paste0(dataPath(sim),
+                       filenameGenerator(nam, start(sim), end(sim)),
+                       # stNoColons = stNoColons),
+                       ".tif")) |>
+      Cache(omitArgs = c("from"), .cacheExtra = digs[[nam]])
     sim[[nam]] <- out
 
   }
