@@ -391,7 +391,7 @@ GenerateClimate <- function(sim) {
 
   ## write to disk; they are enormous
   for (nam in nams) {
-    out <- writeTo(
+    out <- writeTo(overwrite = TRUE,
       sim[[nam]],
       writeTo = paste0(dataPath(sim),
                        filenameGenerator(nam, start(sim), end(sim)),
